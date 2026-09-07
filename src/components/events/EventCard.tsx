@@ -26,11 +26,11 @@ export default function EventCard({ event }: EventCardProps) {
   const creatorName = "Pesta Bebas Berselancar";
 
   // Format date correctly for UI e.g. "Jiexpo Kemayoran 25 - 28 Agustus 2026"
-  const formattedDate = new Date(event.event_date).toLocaleDateString('id-ID', {
+  const formattedDate = event.event_date ? new Date(event.event_date).toLocaleDateString('id-ID', {
     day: 'numeric',
     month: 'long',
     year: 'numeric'
-  });
+  }) : "25 - 28 Agustus 2026";
 
   return (
     <Link href={`/events/${event.id}`} className="block group">

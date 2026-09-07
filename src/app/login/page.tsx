@@ -45,15 +45,12 @@ function LoginForm() {
   return (
     <div className="w-full max-w-md glass-panel p-8 rounded-3xl border border-purple-500/30 space-y-6 shadow-2xl">
       <div className="text-center space-y-2">
-        <Link href="/" className="inline-flex items-center gap-2 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 p-0.5">
-            <div className="w-full h-full bg-zinc-950 rounded-[10px] flex items-center justify-center">
-              <Ticket className="w-5 h-5 text-purple-400" />
-            </div>
-          </div>
-          <span className="font-extrabold text-xl tracking-wider text-white">
-            TICKET<span className="text-gradient">IFY</span>
-          </span>
+        <Link href="/" className="inline-flex items-center justify-center px-4 py-2 rounded-2xl bg-white shadow-md hover:shadow-lg transition-all group mb-2">
+          <img
+            src="/logo-tix.png"
+            alt="TixGoo Logo"
+            className="h-8 sm:h-9 w-auto object-contain transition-transform group-hover:scale-105"
+          />
         </Link>
         <h2 className="text-2xl font-extrabold text-white">Selamat Datang Kembali</h2>
         <p className="text-xs text-zinc-400">Masuk ke akun Pengguna, Admin, atau Petugas Event</p>

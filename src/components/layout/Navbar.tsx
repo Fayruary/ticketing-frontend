@@ -24,17 +24,12 @@ export default function Navbar({ className = "" }: NavbarProps) {
           {/* Logo & Location Selector */}
           <div className="flex items-center gap-6 shrink-0">
             {/* TixGoo Brand Logo */}
-            <Link href="/" className="flex items-center gap-1.5 group">
-              <div className="flex flex-col">
-                <div className="flex items-center">
-                  <span className="text-2xl font-black tracking-tight text-[#111d5e] flex items-center">
-                    <span className="text-blue-600 mr-0.5">✦</span>Tix<span className="text-blue-500">Goo</span>
-                  </span>
-                </div>
-                <span className="text-[7px] tracking-widest uppercase font-bold text-gray-400 -mt-1">
-                  LET&apos;S ENJOY THE SHOW
-                </span>
-              </div>
+            <Link href="/" className="flex items-center group py-1">
+              <img
+                src="/logo-tix.png"
+                alt="TixGoo Logo"
+                className="h-9 sm:h-10 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
+              />
             </Link>
 
             {/* Location Dropdown */}

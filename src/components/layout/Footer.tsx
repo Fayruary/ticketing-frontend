@@ -30,16 +30,11 @@ export default function Footer() {
           <div className="space-y-4 lg:col-span-1">
             {/* TixGoo Logo */}
             <Link href="/" className="inline-block group">
-              <div className="flex flex-col">
-                <div className="flex items-center">
-                  <span className="text-2xl font-black tracking-tight text-[#111d5e] flex items-center">
-                    <span className="text-blue-600 mr-0.5">✦</span>Tix<span className="text-blue-500">Goo</span>
-                  </span>
-                </div>
-                <span className="text-[7px] tracking-widest uppercase font-bold text-gray-400 -mt-1">
-                  LET&apos;S ENJOY THE SHOW
-                </span>
-              </div>
+              <img
+                src="/logo-tix.png"
+                alt="TixGoo Logo"
+                className="h-10 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
+              />
             </Link>
 
             <p className="text-xs text-gray-600 leading-relaxed">

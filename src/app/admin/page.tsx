@@ -250,18 +250,17 @@ export default function AdminPage() {
       <aside className={`fixed inset-y-0 left-0 z-40 w-72 flex flex-col glass-panel border-r border-zinc-800/80 transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
         {/* Sidebar Header */}
         <div className="p-6 border-b border-zinc-800/80 flex items-center justify-between shrink-0">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 p-0.5">
-              <div className="w-full h-full bg-zinc-950 rounded-[9px] flex items-center justify-center">
-                <Ticket className="w-4 h-4 text-purple-400" />
-              </div>
+          <Link href="/" className="flex flex-col gap-2 group">
+            <div className="bg-white px-3 py-1.5 rounded-xl inline-flex items-center shadow-sm">
+              <img
+                src="/logo-tix.png"
+                alt="TixGoo Logo"
+                className="h-7 w-auto object-contain transition-transform group-hover:scale-105"
+              />
             </div>
-            <div>
-              <span className="font-extrabold text-base text-white">TICKET<span className="text-gradient">IFY</span></span>
-              <div className="flex items-center gap-1 mt-0.5">
-                <ShieldCheck className="w-3 h-3 text-amber-400" />
-                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Portal Admin</span>
-              </div>
+            <div className="flex items-center gap-1.5 px-1">
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Portal Admin</span>
             </div>
           </Link>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 rounded-lg bg-zinc-800 text-zinc-400">

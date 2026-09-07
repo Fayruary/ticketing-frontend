@@ -72,7 +72,7 @@ export default function KerjasamaPage() {
 
   const handleOpenWhatsApp = (packageName: string) => {
     const phoneNumber = "6281234567890"; // WhatsApp Admin
-    const text = `Halo Admin TICKETIFY UKK, saya Penyelenggara Event / Event Organizer bermaksud untuk mengajukan kerja sama penjualan tiket konser online.
+    const text = `Halo Admin TixGoo UKK, saya Penyelenggara Event / Event Organizer bermaksud untuk mengajukan kerja sama penjualan tiket konser online.
 
 Paket Pilihan: ${packageName}
 
@@ -85,7 +85,7 @@ Detail Event Kami:
 - Rencana Harga Tiket: 
 - Deskripsi Singkat: 
 
-Mohon info proses verifikasi dan penerbitan event di platform TICKETIFY. Terima kasih!`;
+Mohon info proses verifikasi dan penerbitan event di platform TixGoo. Terima kasih!`;
 
     const url = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(text)}`;
     window.open(url, "_blank");

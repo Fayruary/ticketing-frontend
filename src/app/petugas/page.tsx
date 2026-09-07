@@ -189,15 +189,14 @@ export default function PetugasPage() {
       <header className="sticky top-0 z-50 glass-panel border-b border-zinc-800/80">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 to-pink-500 p-0.5">
-                <div className="w-full h-full bg-zinc-950 rounded-[9px] flex items-center justify-center">
-                  <Ticket className="w-4 h-4 text-purple-400" />
-                </div>
+            <Link href="/" className="flex items-center group">
+              <div className="bg-white px-3 py-1.5 rounded-xl inline-flex items-center shadow-sm">
+                <img
+                  src="/logo-tix.png"
+                  alt="TixGoo Logo"
+                  className="h-7 w-auto object-contain transition-transform group-hover:scale-105"
+                />
               </div>
-              <span className="font-extrabold text-base text-white hidden sm:block">
-                TICKET<span className="text-gradient">IFY</span>
-              </span>
             </Link>
             <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
               <ShieldCheck className="w-3.5 h-3.5" />

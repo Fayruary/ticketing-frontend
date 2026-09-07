@@ -14,8 +14,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TICKETIFY - Platform Penjualan Tiket Konser Online",
-  description: "Wadah resmi penjualan tiket konser online dari berbagai event organizer di Indonesia.",
+  title: "TixGoo - Platform Penjualan Tiket Konser & Event Online",
+  description: "Beli tiket konser, festival, sport event, dan event seru lainnya dengan mudah di TixGoo. Your Ticket, Your Moment.",
+  icons: {
+    icon: "/logo-tix.png",
+    shortcut: "/logo-tix.png",
+    apple: "/logo-tix.png",
+  },
 };
 
 export default function RootLayout({

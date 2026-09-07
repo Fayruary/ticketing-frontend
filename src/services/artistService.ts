@@ -4,6 +4,7 @@ export interface Artist {
   id: string;
   name: string;
   photo?: string;
+  genre?: string;
 }
 
 export async function getArtists() {
@@ -68,6 +69,9 @@ export async function getEventArtists(
     `/artists/event/${eventId}`
   );
 }
+
+// Alias used by event detail page
+export const getArtistsByEvent = getEventArtists;
 
 export async function removeArtistFromEvent(
   id: string

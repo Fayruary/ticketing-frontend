@@ -14,9 +14,13 @@ export interface Order {
   event_name?: string;
 }
 
-export interface CreateOrderData {
+export interface OrderItem {
   ticket_category_id: string;
   quantity: number;
+}
+
+export interface CreateOrderData {
+  items: OrderItem[];
 }
 
 export async function createOrder(
@@ -27,6 +31,7 @@ export async function createOrder(
     body: JSON.stringify(data),
   });
 }
+
 
 export async function getMyOrders() {
   return apiFetch<Order[]>("/orders/my");

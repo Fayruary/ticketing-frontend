@@ -34,13 +34,13 @@ export async function getPaymentByOrder(
 
 export async function updatePaymentStatus(
   id: string,
-  data: Partial<Payment>
+  status: Payment["status"]
 ) {
   return apiFetch<Payment>(
     `/payments/${id}/status`,
     {
       method: "PATCH",
-      body: JSON.stringify(data),
+      body: JSON.stringify({ status }),
     }
   );
-}
+}

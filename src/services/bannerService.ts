@@ -3,8 +3,10 @@ import { apiFetch } from "../lib/api";
 export interface Banner {
   id: number;
   title: string;
+  description?: string;
   image?: string;
   image_url?: string;
+  link_url?: string;
   is_active: boolean;
 }
 

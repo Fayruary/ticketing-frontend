@@ -45,28 +45,28 @@ export default function MyTicketsPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-950 text-white selection:bg-purple-500 selection:text-white">
+    <div className="min-h-screen flex flex-col bg-white text-gray-700 font-sans selection:bg-[#111d5e] selection:text-white">
       <Navbar />
 
-      <main className="flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
+      <main className="flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full bg-white">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 border-b border-zinc-800 pb-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 border-b border-gray-100 pb-6">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30 text-xs font-bold uppercase tracking-wider mb-2">
-              <TicketCheck className="w-4 h-4" />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 text-[#111d5e] border border-slate-200 text-xs font-bold uppercase tracking-wider mb-2">
+              <TicketCheck className="w-4 h-4 text-[#111d5e]" />
               <span>Dompet Tiket Konsermu</span>
             </div>
-            <h1 className="text-3xl font-extrabold text-white">Tiket Saya</h1>
-            <p className="text-xs text-zinc-400 mt-1">
+            <h1 className="text-3xl font-black text-gray-900 tracking-tight">Tiket Saya</h1>
+            <p className="text-xs text-gray-500 mt-1">
               Tunjukkan QR Code E-Ticket ini kepada petugas check-in di venue saat hari konser berlangsung.
             </p>
           </div>
 
           <Link
             href="/"
-            className="px-5 py-2.5 rounded-xl font-bold text-xs bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:border-zinc-700 transition-all flex items-center gap-2"
+            className="px-5 py-2.5 rounded-xl font-bold text-xs bg-gray-50 border border-gray-200 text-gray-700 hover:text-[#111d5e] hover:border-gray-300 transition-all flex items-center gap-2 shadow-xs"
           >
-            <Search className="w-4 h-4" />
+            <Search className="w-4 h-4 text-gray-500" />
             Cari Tiket Konser Lainnya
           </Link>
         </div>
@@ -75,34 +75,34 @@ export default function MyTicketsPage() {
         {loading ? (
           <div className="space-y-4">
             {[1, 2].map((n) => (
-              <div key={n} className="h-44 rounded-3xl bg-zinc-900/60 animate-pulse border border-zinc-800" />
+              <div key={n} className="h-44 rounded-3xl bg-gray-100/70 animate-pulse border border-gray-200" />
             ))}
           </div>
         ) : error ? (
-          <div className="p-6 rounded-3xl glass-panel border border-rose-500/30 text-center space-y-3">
-            <AlertCircle className="w-10 h-10 text-rose-400 mx-auto" />
-            <p className="text-sm font-semibold text-rose-300">{error}</p>
+          <div className="p-6 rounded-3xl bg-red-50 border border-red-100 text-center space-y-3">
+            <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
+            <p className="text-sm font-semibold text-red-700">{error}</p>
             <button
               onClick={fetchTickets}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-zinc-800 text-white"
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-white border border-red-200 text-red-700 hover:bg-red-100 transition-all cursor-pointer"
             >
               Coba Lagi
             </button>
           </div>
         ) : tickets.length === 0 ? (
-          <div className="glass-panel p-12 rounded-3xl border border-zinc-800 text-center space-y-4 my-8">
-            <div className="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center mx-auto">
+          <div className="bg-gray-50/60 p-12 rounded-3xl border border-gray-200 text-center space-y-4 my-8">
+            <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-100 text-[#111d5e] flex items-center justify-center mx-auto">
               <TicketIcon className="w-8 h-8" />
             </div>
-            <h3 className="text-xl font-bold text-white">Belum Ada Tiket Konser</h3>
-            <p className="text-sm text-zinc-400 max-w-md mx-auto">
+            <h3 className="text-xl font-extrabold text-gray-900">Belum Ada Tiket Konser</h3>
+            <p className="text-sm text-gray-500 max-w-md mx-auto">
               Kamu belum membeli tiket konser apapun. Temukan konser favoritmu dan dapatkan E-Ticket QR Code secara instan!
             </p>
             <Link
               href="/"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-600/30 transition-all hover:scale-105"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm bg-[#111d5e] hover:bg-[#0c1543] text-white shadow-lg transition-all hover:scale-105"
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-4 h-4 text-blue-300" />
               Jelajah Konser Sekarang
             </Link>
           </div>

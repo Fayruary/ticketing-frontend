@@ -10,7 +10,7 @@ import EventGridSection from "@/components/home/EventGridSection";
 export const metadata = {
   title: "TixGoo - Beli Tiket Event, Konser & Wahana Idaman",
   description:
-    "Beli tiket konser, festival, sport event, dan event seru lainnya dengan mudah di LOKET. #PASTIBISA beli tiket event & wahana idaman!",
+    "Beli tiket konser, festival, sport event, dan event seru lainnya dengan mudah di TixGoo. #PASTIBISA beli tiket event & wahana idaman!",
 };
 
 export default function Home() {
@@ -32,7 +32,7 @@ export default function Home() {
         {/* 'Kategori' Selection Grid Component */}
         <CategorySection />
 
-        {/* Second 'Lagi Trending' Section (3x4 Grid of 12 Cards + 'Lihat Semua' Button) */}
+        {/* Event Catalog with Search, Filter & Pagination */}
         <EventGridSection />
       </main>
 

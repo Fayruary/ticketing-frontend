@@ -44,14 +44,13 @@ function LoginForm() {
   };
 
   return (
-    <div className="w-full max-w-md glass-panel p-8 rounded-3xl border border-purple-500/30 space-y-6 shadow-2xl">
-      <div className="text-center space-y-2">
-        <Link href="/" className="inline-flex items-center justify-center px-4 py-2 rounded-2xl bg-white shadow-md hover:shadow-lg transition-all group mb-2">
-          <img
-            src="/logo-tix.png"
-            alt="TixGoo Logo"
-            className="h-8 sm:h-9 w-auto object-contain transition-transform group-hover:scale-105"
-          />
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-slate-50 via-white to-blue-50 font-sans">
+      {/* Top Nav Bar */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-white">
+        <Link href="/" className="flex items-center gap-1.5">
+          <span className="text-xl font-black tracking-tight text-[#111d5e] flex items-center">
+            <span className="text-blue-600 mr-0.5">✦</span>Tix<span className="text-blue-500">Goo</span>
+          </span>
         </Link>
         <Link href="/register" className="text-xs font-semibold text-[#111d5e] hover:underline">
           Daftar Akun

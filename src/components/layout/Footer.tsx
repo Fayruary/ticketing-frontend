@@ -3,22 +3,22 @@ import Link from "next/link";
 import { ShieldCheck } from "lucide-react";
 
 const paymentMethods = [
-  { name: "Mandiri", color: "text-blue-700 font-bold" },
-  { name: "BCA", color: "text-blue-800 font-black" },
-  { name: "Permata", color: "text-emerald-600 font-semibold" },
-  { name: "BRI", color: "text-blue-600 font-extrabold" },
-  { name: "BNI", color: "text-teal-600 font-extrabold" },
-  { name: "BTN", color: "text-amber-600 font-bold" },
-  { name: "BSI", color: "text-teal-700 font-bold" },
-  { name: "CIMB", color: "text-red-700 font-bold" },
-  { name: "VISA", color: "text-blue-700 font-black italic" },
-  { name: "Mastercard", color: "text-orange-600 font-black" },
-  { name: "ShopeePay", color: "text-orange-500 font-bold" },
-  { name: "GoPay", color: "text-sky-500 font-bold" },
-  { name: "QRIS", color: "text-red-600 font-extrabold" },
-  { name: "LinkAja", color: "text-red-500 font-bold" },
-  { name: "Indomaret", color: "text-blue-600 font-bold" },
-  { name: "Alfamart", color: "text-red-600 font-bold" },
+  { name: "BCA", logo: "/payment-logo/bca.jpg" },
+  { name: "Mandiri", logo: "/payment-logo/mandiri.jpg" },
+  { name: "BNI", logo: "/payment-logo/bni.jpg" },
+  { name: "BRI", logo: "/payment-logo/bri.jpg" },
+  { name: "Permata", logo: "/payment-logo/permata.jpg" },
+  { name: "BSI", logo: "/payment-logo/bsi.png" },
+  { name: "BTN", logo: "/payment-logo/btn.webp" },
+  { name: "CIMB Niaga", logo: "/payment-logo/cimb.jpg" },
+  { name: "VISA", logo: "/payment-logo/visa.jpg" },
+  { name: "Mastercard", logo: "/payment-logo/mastercard.jpg" },
+  { name: "QRIS", logo: "/payment-logo/qris.jpg" },
+  { name: "GoPay", logo: "/payment-logo/gopay.jpg" },
+  { name: "ShopeePay", logo: "/payment-logo/shopeepay.jpg" },
+  { name: "Indodana", logo: "/payment-logo/indodana.jpg" },
+  { name: "Indomaret", logo: "/payment-logo/indomaret.jpg" },
+  { name: "Alfamart", logo: "/payment-logo/alfamart.jpg" },
 ];
 
 export default function Footer() {
@@ -164,16 +164,19 @@ export default function Footer() {
               Pilihan Pembayaran
             </h4>
             {/* Grid of payment method badges */}
-            <div className="grid grid-cols-4 gap-1.5 mb-6">
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-2 mb-6">
               {paymentMethods.map((method, idx) => (
                 <div
                   key={idx}
-                  className="h-6 bg-gray-50 border border-gray-200 rounded flex items-center justify-center p-0.5 hover:bg-gray-100 transition-colors"
+                  className="h-8 sm:h-9 bg-white border border-gray-200 rounded-md flex items-center justify-center p-1 sm:p-1.5 hover:border-blue-400 hover:shadow-xs transition-all duration-200 group"
                   title={method.name}
                 >
-                  <span className={`text-[8px] tracking-tighter truncate ${method.color}`}>
-                    {method.name}
-                  </span>
+                  <img
+                    src={method.logo}
+                    alt={method.name}
+                    className="max-h-full max-w-full w-auto h-auto object-contain transition-transform duration-200 group-hover:scale-105"
+                    loading="lazy"
+                  />
                 </div>
               ))}
             </div>

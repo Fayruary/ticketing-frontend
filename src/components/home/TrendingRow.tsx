@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { TrendingUp, ChevronRight } from "lucide-react";
 import EventCard, { EventCardData } from "./EventCard";
 import { getEvents, type Event } from "@/services/eventService";
@@ -9,36 +10,63 @@ interface TrendingRowProps {
   className?: string;
 }
 
-export default function TrendingRow({ className = "" }: TrendingRowProps) {
+function TrendingRowContent({ className = "" }: TrendingRowProps) {
+  const searchParams = useSearchParams();
+  const city = searchParams.get("city") || "";
+  const search = (searchParams.get("search") ?? "").trim();
+
   const [events, setEvents] = useState<EventCardData[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Saat sedang mencari, hasil ditampilkan di "Semua Event"
+    if (search) {
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
     const fetchEvents = async () => {
       try {
-        const res: any = await getEvents({ status: "published" } as any);
+        setLoading(true);
+        const params: any = { status: "published" };
+        if (city) params.city = city;
+
+        const res: any = await getEvents(params);
+        if (cancelled) return;
+
         const list: Event[] = Array.isArray(res) ? res : res?.data || [];
-        // Take first 3 published events for trending row
-        setEvents(list.slice(0, 3).map((e) => ({
-          id: e.id,
-          name: e.name,
-          city: e.city,
-          venue: e.venue,
-          event_date: e.event_date,
-          min_price: e.min_price,
-          poster: e.poster,
-          organizer_name: (e as any).organizer_name,
-          genre: e.genre,
-          status: e.status,
-        })));
+        const filtered = list.filter(
+          (e) => !city || (e.city ?? "").toLowerCase() === city.toLowerCase()
+        );
+
+        setEvents(
+          filtered.slice(0, 3).map((e) => ({
+            id: e.id,
+            name: e.name,
+            city: e.city,
+            venue: e.venue,
+            event_date: e.event_date,
+            min_price: e.min_price,
+            poster: e.poster,
+            organizer_name: (e as any).organizer_name,
+            genre: e.genre,
+            status: e.status,
+          }))
+        );
       } catch {
-        // Keep empty
+        if (!cancelled) setEvents([]);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     fetchEvents();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [city, search]);
+
+  if (search) return null;
 
   if (loading) {
     return (
@@ -64,7 +92,9 @@ export default function TrendingRow({ className = "" }: TrendingRowProps) {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <TrendingUp className="w-6 h-6 text-[#111d5e]" />
-          <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">Lagi Trending</h2>
+          <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
+            Lagi Trending{city ? ` di ${city}` : ""}
+          </h2>
         </div>
         <a href="#events" className="flex items-center gap-1 text-xs font-semibold text-[#111d5e] hover:underline">
           Lihat Semua <ChevronRight className="w-4 h-4" />
@@ -78,5 +108,13 @@ export default function TrendingRow({ className = "" }: TrendingRowProps) {
         ))}
       </div>
     </section>
+  );
+}
+
+export default function TrendingRow(props: TrendingRowProps) {
+  return (
+    <Suspense fallback={null}>
+      <TrendingRowContent {...props} />
+    </Suspense>
   );
 }

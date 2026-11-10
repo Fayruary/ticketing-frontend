@@ -6,6 +6,9 @@ export interface TicketCategory {
   name: string;
   price: number;
   stock: number;
+  description?: string;
+  tickets_per_package?: number;
+  max_per_transaction?: number;
 }
 
 export interface Ticket {
@@ -15,6 +18,8 @@ export interface Ticket {
   qr_code?: string;
   status: "active" | "used";
 
+  owner_name?: string;
+  owner_email?: string;
   event_name?: string;
   ticket_category?: string;
   event_date?: string;

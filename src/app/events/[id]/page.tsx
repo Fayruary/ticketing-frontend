@@ -87,12 +87,12 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
   const totalPrice = selectedCategory ? Number(selectedCategory.price) * quantity : 0;
 
   const handleProceedToCheckout = () => {
-    if (!selectedCategory) return;
     if (!isAuthenticated) {
-      router.push(`/login?redirect=/events/${id}`);
+      router.push(`/login?redirect=/checkout/${id}`);
       return;
     }
-    router.push(`/checkout/${id}?categoryId=${selectedCategory.id}&qty=${quantity}`);
+    const catQuery = selectedCategory ? `?categoryId=${selectedCategory.id}&qty=${quantity}` : "";
+    router.push(`/checkout/${id}${catQuery}`);
   };
 
   if (loading) {

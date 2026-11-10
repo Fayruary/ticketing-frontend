@@ -2,21 +2,27 @@
 
 import React, { useEffect, useState, use } from "react";
 import Link from "next/link";
+import Script from "next/script";
 import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
-import QRCode from "@/components/tickets/QRCode";
 import { getEventById, type Event } from "@/services/eventService";
-import { getTicketCategoryById, type TicketCategory } from "@/services/ticketService";
-import { createOrder, type Order } from "@/services/orderService";
-import { createPayment, updatePaymentStatus } from "@/services/paymentService";
+import { getTicketCategories, type TicketCategory } from "@/services/ticketService";
+import {
+  createCheckoutOrder,
+  getOrderStatus,
+  simulatePayment,
+  getOrderETickets,
+  type Order,
+  type IssuedTicket,
+  type TicketHolder
+} from "@/services/orderService";
 import { formatDate, formatRupiah } from "@/lib/utils";
 import useAuth from "@/hooks/useAuth";
 import {
   ArrowLeft,
   CheckCircle2,
   Clock,
-  QrCode,
   ShieldCheck,
   Ticket,
   User,
@@ -24,8 +30,26 @@ import {
   Phone,
   Sparkles,
   AlertCircle,
-  CreditCard
+  CreditCard,
+  Plus,
+  Minus,
+  ShoppingBag,
+  Printer,
+  Calendar,
+  MapPin,
+  Users,
+  RefreshCw,
+  Lock,
+  ExternalLink,
+  ChevronRight,
+  Check
 } from "lucide-react";
+
+declare global {
+  interface Window {
+    snap?: any;
+  }
+}
 
 export default function CheckoutPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
@@ -33,414 +57,1185 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
   const searchParams = useSearchParams();
   const { user, isAuthenticated } = useAuth();
 
-  const categoryId = searchParams.get("categoryId") || "";
-  const qtyParam = searchParams.get("qty") || "1";
-  const quantity = Math.max(1, parseInt(qtyParam, 10));
+  // Query parameter pre-selection
+  const initialCatId = searchParams.get("categoryId") || "";
+  const initialQty = parseInt(searchParams.get("qty") || "1", 10);
 
+  // Data event & categories
   const [event, setEvent] = useState<Event | null>(null);
-  const [category, setCategory] = useState<TicketCategory | null>(null);
+  const [categories, setCategories] = useState<TicketCategory[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Form State
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
-
-  // Order & Payment State
-  const [order, setOrder] = useState<Order | null>(null);
-  const [payment, setPayment] = useState<any>(null);
-  const [checkoutStep, setCheckoutStep] = useState<"form" | "qris" | "success">("form");
-  const [submitting, setSubmitting] = useState(false);
-  const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Timer state for QRIS
-  const [timeLeft, setTimeLeft] = useState(900); // 15 mins
+  // Stepper State: 1 = Kategori, 2 = Detail Pemesanan, 3 = Pembayaran Midtrans, 4 = E-Ticket
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
 
+  // STEP 1 STATE: Selected Quantities per Category { [categoryId]: quantity }
+  const [selectedItems, setSelectedItems] = useState<{ [categoryId: string]: number }>({});
+
+  // STEP 2 STATE: Buyer Info & Individual Ticket Holders
+  const [buyerName, setBuyerName] = useState("");
+  const [buyerEmail, setBuyerEmail] = useState("");
+  const [buyerPhone, setBuyerPhone] = useState("");
+  const [useBuyerForFirstTicket, setUseBuyerForFirstTicket] = useState(true);
+  const [ticketHolders, setTicketHolders] = useState<TicketHolder[]>([]);
+
+  // STEP 3 & 4 STATE: Order, Payment & E-Tickets
+  const [order, setOrder] = useState<Order | null>(null);
+  const [snapToken, setSnapToken] = useState<string | null>(null);
+  const [issuedTickets, setIssuedTickets] = useState<IssuedTicket[]>([]);
+  const [submittingOrder, setSubmittingOrder] = useState(false);
+  const [verifyingPayment, setVerifyingPayment] = useState(false);
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
+
+  // Load Event and Categories
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push(`/login?redirect=/checkout/${eventId}?categoryId=${categoryId}&qty=${quantity}`);
-      return;
-    }
+    fetchInitialData();
+  }, [eventId]);
 
+  // Autofill user profile when available
+  useEffect(() => {
     if (user) {
-      setName(user.name || "");
-      setEmail(user.email || "");
-      setPhone(user.phone || "");
+      if (!buyerName) setBuyerName(user.name || "");
+      if (!buyerEmail) setBuyerEmail(user.email || "");
+      if (!buyerPhone) setBuyerPhone(user.phone || "");
     }
+  }, [user]);
 
-    fetchDetails();
-  }, [eventId, categoryId, user, isAuthenticated]);
-
-  useEffect(() => {
-    let timer: any;
-    if (checkoutStep === "qris" && timeLeft > 0) {
-      timer = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [checkoutStep, timeLeft]);
-
-  const fetchDetails = async () => {
+  const fetchInitialData = async () => {
     try {
       setLoading(true);
+      setError(null);
+
       const [evtRes, catRes] = await Promise.all([
         getEventById(eventId),
-        getTicketCategoryById(categoryId)
+        getTicketCategories(eventId)
       ]);
 
-      setEvent((evtRes as any)?.data || evtRes);
-      setCategory((catRes as any)?.data || catRes);
+      const eventData = (evtRes as any)?.data || evtRes;
+      const catsData: TicketCategory[] = Array.isArray(catRes) ? catRes : (catRes as any)?.data || [];
+
+      setEvent(eventData);
+      setCategories(catsData);
+
+      // Pre-select category from query param if available
+      if (initialCatId && catsData.some((c) => c.id === initialCatId)) {
+        const found = catsData.find((c) => c.id === initialCatId);
+        const maxQty = Math.min(found?.stock || 1, initialQty || 1);
+        setSelectedItems({ [initialCatId]: maxQty });
+      }
     } catch (err: any) {
-      console.error("Error loading checkout details:", err);
-      setError(err.message || "Gagal memuat rincian pesanan");
+      console.error("Error loading checkout data:", err);
+      setError(err.message || "Gagal memuat informasi event dan kategori tiket.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreateOrderAndPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // --- STEP 1 LOGIC: Category Counters & Calculations ---
+  const handleQuantityChange = (catId: string, delta: number) => {
+    const category = categories.find((c) => c.id === catId);
     if (!category) return;
 
+    const currentQty = selectedItems[catId] || 0;
+    const newQty = Math.max(0, currentQty + delta);
+    const maxStock = category.stock;
+    const maxPerOrder = category.max_per_transaction || 5;
+    const limit = Math.min(maxStock, maxPerOrder);
+
+    if (newQty > limit) {
+      alert(`Maksimal pembelian untuk kategori ${category.name} adalah ${limit} tiket.`);
+      return;
+    }
+
+    setSelectedItems((prev) => {
+      const updated = { ...prev };
+      if (newQty === 0) {
+        delete updated[catId];
+      } else {
+        updated[catId] = newQty;
+      }
+      return updated;
+    });
+  };
+
+  // Hitung total paket, total tiket fisik (termasuk bundling), subtotal
+  const totalPackages = Object.values(selectedItems).reduce((sum, q) => sum + q, 0);
+
+  const totalPhysicalTickets = Object.entries(selectedItems).reduce((sum, [catId, qty]) => {
+    const cat = categories.find((c) => c.id === catId);
+    const bundleSize = cat?.tickets_per_package || 1;
+    return sum + qty * bundleSize;
+  }, 0);
+
+  const subtotal = Object.entries(selectedItems).reduce((sum, [catId, qty]) => {
+    const cat = categories.find((c) => c.id === catId);
+    return sum + (Number(cat?.price) || 0) * qty;
+  }, 0);
+
+  const adminFee = totalPackages > 0 ? 5000 : 0;
+  const grandTotal = subtotal + adminFee;
+
+  // Sync Ticket Holders array when switching to Step 2
+  const handleProceedToStep2 = () => {
+    if (totalPackages === 0) {
+      alert("Silakan pilih minimal satu kategori tiket untuk melanjutkan.");
+      return;
+    }
+
+    // Bangun slot tiket fisik untuk masing-masing pemegang tiket
+    const newHolders: TicketHolder[] = [];
+    let idx = 1;
+
+    Object.entries(selectedItems).forEach(([catId, qty]) => {
+      const cat = categories.find((c) => c.id === catId);
+      const bundleSize = cat?.tickets_per_package || 1;
+      const count = qty * bundleSize;
+
+      for (let i = 0; i < count; i++) {
+        // Cek apakah data holder indeks ini sudah pernah diisi
+        const existing = ticketHolders[idx - 1];
+        newHolders.push({
+          ticket_category_id: catId,
+          ticket_index: idx,
+          category_name: cat?.name || "Tiket",
+          name: existing?.name || (idx === 1 && useBuyerForFirstTicket ? buyerName : ""),
+          email: existing?.email || (idx === 1 && useBuyerForFirstTicket ? buyerEmail : ""),
+          phone: existing?.phone || (idx === 1 && useBuyerForFirstTicket ? buyerPhone : "")
+        });
+        idx++;
+      }
+    });
+
+    setTicketHolders(newHolders);
+    setCurrentStep(2);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Update specific ticket holder field
+  const handleHolderChange = (index: number, field: keyof TicketHolder, value: string) => {
+    setTicketHolders((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], [field]: value };
+      return copy;
+    });
+  };
+
+  // Sync first ticket holder if toggle active
+  useEffect(() => {
+    if (useBuyerForFirstTicket && ticketHolders.length > 0) {
+      setTicketHolders((prev) => {
+        const copy = [...prev];
+        copy[0] = {
+          ...copy[0],
+          name: buyerName,
+          email: buyerEmail,
+          phone: buyerPhone
+        };
+        return copy;
+      });
+    }
+  }, [useBuyerForFirstTicket, buyerName, buyerEmail, buyerPhone]);
+
+  // --- STEP 2 -> STEP 3: Create Order & Initialize Midtrans Snap ---
+  const handleProceedToStep3 = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Validasi data pemesan
+    if (!buyerName.trim() || !buyerEmail.trim() || !buyerPhone.trim()) {
+      alert("Lengkapi nama lengkap, alamat email, dan nomor WhatsApp pemesan.");
+      return;
+    }
+
+    // Validasi format email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(buyerEmail.trim())) {
+      alert("Format alamat email pemesan tidak valid.");
+      return;
+    }
+
+    // Validasi nomor telepon
+    if (buyerPhone.trim().length < 9) {
+      alert("Nomor WhatsApp/telepon minimal 9 digit.");
+      return;
+    }
+
+    // Validasi nama setiap pemegang tiket
+    for (let i = 0; i < ticketHolders.length; i++) {
+      if (!ticketHolders[i].name?.trim()) {
+        alert(`Harap isi nama lengkap untuk Tiket #${i + 1} (${ticketHolders[i].category_name}).`);
+        return;
+      }
+    }
+
     try {
-      setSubmitting(true);
+      setSubmittingOrder(true);
       setError(null);
 
-      // 1. Create order
-      const orderResponse: any = await createOrder({
-        items: [
-          {
-            ticket_category_id: category.id,
-            quantity: quantity
-          }
-        ] as any
+      // Siapkan items payload
+      const itemsPayload = Object.entries(selectedItems).map(([catId, qty]) => ({
+        ticket_category_id: catId,
+        quantity: qty
+      }));
+
+      // Kirim ke backend
+      const res: any = await createCheckoutOrder({
+        event_id: eventId,
+        buyer_name: buyerName.trim(),
+        buyer_email: buyerEmail.trim(),
+        buyer_phone: buyerPhone.trim(),
+        items: itemsPayload,
+        ticket_holders: ticketHolders
       });
 
-      const orderData = orderResponse?.data || orderResponse;
+      console.log("createCheckoutOrder response:", res);
+
+      const orderData = res?.order || res?.data?.order || res;
+      const token = res?.snap_token || res?.data?.snap_token;
+
+      if (!orderData || (!orderData.id && !orderData.invoice_code)) {
+        throw new Error(res?.message || "Gagal membuat tagihan pesanan. Silakan periksa kembali formulir.");
+      }
+
       setOrder(orderData);
-
-      // 2. Create Payment
-      const paymentResponse: any = await createPayment({
-        order_id: orderData.id,
-        payment_method: "qris"
-      });
-
-      const paymentData = paymentResponse?.data || paymentResponse;
-      setPayment(paymentData);
-
-      setCheckoutStep("qris");
+      setSnapToken(token);
+      setCurrentStep(3);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err: any) {
-      console.error("Checkout error:", err);
-      setError(err.message || "Gagal memproses pembuatan tagihan pesanan");
+      console.error("Error creating order:", err);
+      setError(err.message || "Gagal membuat tagihan pesanan. Silakan periksa kembali kuota tiket.");
     } finally {
-      setSubmitting(false);
+      setSubmittingOrder(false);
     }
   };
 
-  const handleSimulateQRISPayment = async () => {
-    if (!payment) return;
+  // --- STEP 3 LOGIC: Midtrans Snap Payment Trigger ---
+  const handleOpenMidtransSnap = () => {
+    if (!snapToken) {
+      alert("Token transaksi Midtrans belum siap. Silakan ulangi pemesanan.");
+      return;
+    }
+
+    // Jika masih menggunakan fallback DEMO-SNAP (karena Server Key di .env belum diisi Server Key aktif)
+    if (snapToken.startsWith("DEMO-SNAP-")) {
+      const confirmSim = confirm(
+        "Kunci Server Key di .env backend belum terhubung ke Midtrans Sandbox resmi (masih menggunakan demo token).\n\nIngin langsung jalankan Simulasi Pembayaran Sukses untuk demonstrasi UKK dan menerbitkan E-Ticket QR Code sekarang?"
+      );
+      if (confirmSim) {
+        handleSimulatePaymentDemo();
+      }
+      return;
+    }
+
+    // Cek apakah script Midtrans Snap sudah dimuat di window
+    if (typeof window !== "undefined" && window.snap) {
+      window.snap.pay(snapToken, {
+        onSuccess: async function (result: any) {
+          console.log("Midtrans payment success:", result);
+          setPaymentSuccess(true);
+          await handleCheckPaymentSuccess(order?.id || result?.order_id || order?.invoice_code);
+        },
+        onPending: async function (result: any) {
+          console.log("Midtrans payment pending:", result);
+          alert("Pembayaran Anda sedang menunggu penyelesaian di Midtrans Sandbox.");
+          await handleCheckPaymentSuccess(order?.id || result?.order_id || order?.invoice_code);
+        },
+        onError: function (result: any) {
+          console.error("Midtrans payment error:", result);
+          alert("Pembayaran gagal atau dibatalkan oleh sistem Midtrans.");
+        },
+        onClose: function () {
+          console.log("Customer closed the Snap popup without finishing the payment");
+        }
+      });
+    } else {
+      // Fallback jika popup snap blocked / script belum loaded
+      alert("Memuat Snap Gateway... Jika popup tidak terbuka, Anda dapat menggunakan tombol Simulasi Sandbox di bawah.");
+    }
+  };
+
+  // Verifikasi status pembayaran dan ambil E-Tickets
+  const handleCheckPaymentSuccess = async (orderIdentifier?: string) => {
+    const idToQuery = orderIdentifier || order?.id || order?.invoice_code;
+    if (!idToQuery) return;
 
     try {
-      setPaying(true);
-      setError(null);
+      setVerifyingPayment(true);
+      const res: any = await getOrderStatus(idToQuery);
+      const fetchedOrder = res?.order || res?.data?.order;
 
-      await updatePaymentStatus(payment.id, "success");
-
-      setCheckoutStep("success");
+      if (fetchedOrder && (fetchedOrder.status === "paid" || fetchedOrder.payment_status === "settlement")) {
+        // Ambil tiket resmi
+        const eTicketRes: any = await getOrderETickets(idToQuery);
+        const tickets = eTicketRes?.tickets || eTicketRes?.data?.tickets || [];
+        const ord = eTicketRes?.order || eTicketRes?.data?.order || fetchedOrder;
+        setOrder(ord);
+        setIssuedTickets(tickets);
+        setCurrentStep(4);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        alert("Pembayaran belum terkonfirmasi sebagai lunas oleh backend. Silakan coba kembali sesaat lagi.");
+      }
     } catch (err: any) {
-      console.error("Payment simulation error:", err);
-      setError(err.message || "Gagal memverifikasi pembayaran QRIS");
+      console.error("Check status error:", err);
     } finally {
-      setPaying(false);
+      setVerifyingPayment(false);
     }
   };
 
-  const formatTimer = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+  // Simulasi Pembayaran Midtrans Sandbox untuk Demo UKK
+  const handleSimulatePaymentDemo = async () => {
+    const idToQuery = order?.id || order?.invoice_code;
+    if (!idToQuery) {
+      alert("ID Pesanan tidak ditemukan. Harap ulangi pemesanan.");
+      return;
+    }
+
+    try {
+      setVerifyingPayment(true);
+      setError(null);
+
+      const simRes: any = await simulatePayment(idToQuery);
+      console.log("Simulate payment success:", simRes);
+
+      // Ambil E-Ticket yang baru saja diterbitkan oleh backend
+      const eTicketRes: any = await getOrderETickets(idToQuery);
+      const tickets = eTicketRes?.tickets || eTicketRes?.data?.tickets || simRes?.tickets || simRes?.data?.tickets || [];
+      const ord = eTicketRes?.order || eTicketRes?.data?.order;
+      if (ord) setOrder(ord);
+      setIssuedTickets(tickets);
+      setCurrentStep(4);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err: any) {
+      console.error("Simulation error:", err);
+      setError(err.message || "Gagal memproses simulasi pembayaran Sandbox.");
+    } finally {
+      setVerifyingPayment(false);
+    }
+  };
+
+  // --- STEP 4 LOGIC: Print / Download E-Ticket ---
+  const handlePrintTickets = () => {
+    window.print();
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col bg-zinc-950 text-white">
+      <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 font-sans">
         <Navbar />
-        <div className="flex-1 flex items-center justify-center p-12">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 border-4 border-purple-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-sm font-semibold text-zinc-400">Menyiapkan pembayaran QRIS...</p>
-          </div>
+        <div className="flex-1 flex flex-col items-center justify-center p-12">
+          <div className="w-10 h-10 border-4 border-[#111d5e] border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-sm font-semibold text-gray-600">Memuat rincian event & tiket...</p>
         </div>
         <Footer />
       </div>
     );
   }
 
-  const totalPrice = category ? Number(category.price) * quantity : 0;
-  const adminFee = 5000;
-  const grandTotal = totalPrice + adminFee;
+  if (error && !event) {
+    return (
+      <div className="min-h-screen flex flex-col bg-gray-50 text-gray-900 font-sans">
+        <Navbar />
+        <div className="flex-1 flex flex-col items-center justify-center p-12 text-center max-w-md mx-auto">
+          <AlertCircle className="w-16 h-16 text-rose-500 mb-4" />
+          <h2 className="text-2xl font-black text-gray-900 mb-2">Terjadi Kesalahan</h2>
+          <p className="text-xs text-gray-500 mb-6">{error}</p>
+          <Link
+            href="/"
+            className="px-6 py-2.5 rounded-xl bg-[#111d5e] text-white text-xs font-bold hover:bg-[#0c1543] transition-all"
+          >
+            Kembali ke Beranda
+          </Link>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  const clientKey = process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY || "SB-Mid-client-L5k1x8Y4nQz0mP2v-DEMO";
 
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-950 text-white selection:bg-purple-500 selection:text-white">
+    <div className="min-h-screen flex flex-col bg-[#f8fafc] text-gray-900 font-sans selection:bg-blue-100 selection:text-blue-900">
       <Navbar />
 
-      <main className="flex-1 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
-        {/* Header Breadcrumb */}
-        <div className="mb-6">
-          <Link
-            href={`/events/${eventId}`}
-            className="inline-flex items-center gap-2 text-xs font-semibold text-zinc-400 hover:text-white mb-2"
-          >
-            <ArrowLeft className="w-4 h-4" /> Kembali ke Event
-          </Link>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white">Checkout Tiket Konser</h1>
-          <p className="text-xs text-zinc-400 mt-1">Lengkapi data diri dan bayar menggunakan QRIS Payment Gateway</p>
+      {/* Script Midtrans Snap Sandbox */}
+      <Script
+        src="https://app.sandbox.midtrans.com/snap/snap.js"
+        data-client-key={clientKey}
+        strategy="lazyOnload"
+      />
+
+      <main className="flex-1 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+        {/* ============================================================== */}
+        {/* 1. HEADER INFORMASI EVENT (Banner, Judul, Tanggal, Venue)       */}
+        {/* ============================================================== */}
+        {event && (
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-gray-200/80 shadow-sm mb-6 flex flex-col md:flex-row gap-6 items-start md:items-center">
+            {/* Event Poster Thumbnail */}
+            <div className="w-full md:w-44 h-40 md:h-28 rounded-2xl overflow-hidden bg-gray-100 shrink-0 relative border border-gray-100">
+              <img
+                src={event.poster || "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=600&q=80"}
+                alt={event.name}
+                className="w-full h-full object-cover"
+                onError={(e: any) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=600&q=80";
+                }}
+              />
+              {event.city && (
+                <span className="absolute bottom-2 left-2 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#111d5e]/90 text-white backdrop-blur-sm">
+                  {event.city}
+                </span>
+              )}
+            </div>
+
+            {/* Event Meta Details */}
+            <div className="flex-1 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-blue-50 text-blue-700 border border-blue-100">
+                  {event.genre || "Konser Musik"}
+                </span>
+                <span className="text-xs text-gray-400 font-medium">·</span>
+                <span className="text-xs text-gray-500 font-semibold flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Tiket Resmi Terverifikasi
+                </span>
+              </div>
+
+              <h1 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight leading-snug">
+                {event.name}
+              </h1>
+
+              <div className="flex flex-wrap items-center gap-y-1.5 gap-x-4 text-xs text-gray-600">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span>{formatDate(event.event_date)}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span>{event.event_time ? `${event.event_time.slice(0, 5)} WIB` : "19:00 WIB"}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                  <span className="line-clamp-1">{event.venue || event.city}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Back Button */}
+            <div className="self-stretch md:self-auto flex items-center justify-end">
+              <Link
+                href={`/events/${eventId}`}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-600 hover:text-[#111d5e] bg-gray-50 hover:bg-gray-100 px-3.5 py-2 rounded-xl transition-colors"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" /> Detail Event
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* PROGRESS STEPPER (4 TAHAPAN UTAMA TIXGOO)                      */}
+        {/* ============================================================== */}
+        <div className="bg-white rounded-2xl p-4 border border-gray-200/80 shadow-sm mb-8 print:hidden">
+          <div className="grid grid-cols-4 gap-2 text-center">
+            {[
+              { step: 1, label: "1. Kategori Tiket" },
+              { step: 2, label: "2. Detail Pemesan" },
+              { step: 3, label: "3. Pembayaran" },
+              { step: 4, label: "4. E-Ticket" }
+            ].map(({ step, label }) => {
+              const isActive = currentStep === step;
+              const isPassed = currentStep > step;
+
+              return (
+                <div
+                  key={step}
+                  onClick={() => {
+                    if (step < currentStep && currentStep !== 4) {
+                      setCurrentStep(step as 1 | 2 | 3 | 4);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }
+                  }}
+                  className={`flex flex-col items-center ${
+                    step < currentStep && currentStep !== 4 ? "cursor-pointer hover:opacity-80 transition-opacity" : ""
+                  }`}
+                >
+                  <div
+                    className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs font-black transition-all mb-1.5 ${
+                      isPassed
+                        ? "bg-emerald-500 text-white shadow-sm"
+                        : isActive
+                        ? "bg-[#111d5e] text-white ring-4 ring-blue-100"
+                        : "bg-gray-100 text-gray-400 font-semibold"
+                    }`}
+                  >
+                    {isPassed ? <Check className="w-4 h-4 stroke-[3]" /> : step}
+                  </div>
+                  <span
+                    className={`text-[11px] sm:text-xs tracking-tight transition-colors ${
+                      isActive
+                        ? "font-extrabold text-[#111d5e]"
+                        : isPassed
+                        ? "font-bold text-emerald-700"
+                        : "font-medium text-gray-400"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
+        {/* Error Alert Global */}
         {error && (
-          <div className="mb-6 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-sm flex items-center gap-3">
-            <AlertCircle className="w-5 h-5 shrink-0" />
+          <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-3">
+            <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
-        {/* STEP 1: FORM DATA DIRI & ORDER SUMMARY */}
-        {checkoutStep === "form" && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* ============================================================== */}
+        {/* STEP 1: PILIH KATEGORI TIKET (Artatix UX Flow)                 */}
+        {/* ============================================================== */}
+        {currentStep === 1 && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg sm:text-xl font-extrabold text-gray-900 tracking-tight flex items-center gap-2">
+                  <Ticket className="w-5 h-5 text-[#111d5e]" />
+                  Pilih Kategori Tiket
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Tersedia tiket reguler, VIP, dan paket bundling hemat. Pilih kuantitas yang kamu inginkan.
+                </p>
+              </div>
+              <div className="text-xs text-gray-500 font-semibold hidden sm:block">
+                {categories.length} Kategori Tersedia
+              </div>
+            </div>
+
+            {/* List Kategori Tiket Cards */}
+            {categories.length === 0 ? (
+              <div className="p-8 rounded-3xl bg-white border border-gray-200 text-center text-xs text-gray-500">
+                Belum ada kategori tiket yang dibuka untuk event ini.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {categories.map((cat) => {
+                  const qty = selectedItems[cat.id] || 0;
+                  const isSoldOut = cat.stock <= 0;
+                  const isBundling = (cat.tickets_per_package || 1) > 1;
+                  const itemTotal = Number(cat.price) * qty;
+
+                  return (
+                    <div
+                      key={cat.id}
+                      className={`p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-4 ${
+                        qty > 0
+                          ? "bg-white border-[#111d5e] shadow-md ring-2 ring-blue-50"
+                          : isSoldOut
+                          ? "bg-gray-50/70 border-gray-200 opacity-60"
+                          : "bg-white border-gray-200/90 hover:border-gray-300 hover:shadow-sm"
+                      }`}
+                    >
+                      {/* Top Header Card */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="font-extrabold text-base text-gray-900 leading-snug">
+                            {cat.name}
+                          </h3>
+                          {isBundling && (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200 shrink-0">
+                              Paket {cat.tickets_per_package} Tiket
+                            </span>
+                          )}
+                          {isSoldOut && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-200 shrink-0">
+                              Habis
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Benefit / Deskripsi */}
+                        <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">
+                          {cat.description || "Akses masuk resmi ke area panggung dengan tata suara & pencahayaan spektakuler."}
+                        </p>
+                      </div>
+
+                      {/* Bottom Price & Counter Controls */}
+                      <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] text-gray-400 font-semibold block">Harga per paket</span>
+                          <span className="text-base sm:text-lg font-black text-[#111d5e]">
+                            {formatRupiah(cat.price)}
+                          </span>
+                          <span className="text-[10px] text-gray-500 block mt-0.5">
+                            Sisa kuota: <strong className={cat.stock > 10 ? "text-emerald-600" : "text-amber-600"}>{cat.stock}</strong>
+                          </span>
+                        </div>
+
+                        {/* Counter Plus Minus */}
+                        {!isSoldOut ? (
+                          <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-xl border border-gray-200">
+                            <button
+                              type="button"
+                              onClick={() => handleQuantityChange(cat.id, -1)}
+                              disabled={qty === 0}
+                              className="w-7 h-7 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 flex items-center justify-center font-bold transition-all disabled:opacity-40 cursor-pointer"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="w-6 text-center font-black text-xs text-gray-900">
+                              {qty}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleQuantityChange(cat.id, 1)}
+                              disabled={qty >= cat.stock}
+                              className="w-7 h-7 rounded-lg bg-[#111d5e] text-white hover:bg-[#0c1543] flex items-center justify-center font-bold transition-all disabled:opacity-40 cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400 font-bold">Sold Out</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Sticky Bottom Order Summary Bar */}
+            <div className="sticky bottom-4 z-30 bg-white/95 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-gray-200/90 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 mt-8">
+              <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-start">
+                <div>
+                  <span className="text-[11px] text-gray-500 font-semibold block">Total Pesanan</span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-lg sm:text-xl font-black text-[#111d5e]">
+                      {formatRupiah(grandTotal)}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      ({totalPackages} paket · {totalPhysicalTickets} tiket fisik)
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleProceedToStep2}
+                disabled={totalPackages === 0}
+                className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold text-xs sm:text-sm bg-[#111d5e] hover:bg-[#0c1543] active:scale-98 text-white shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+              >
+                <span>Lanjutkan ke Data Pemesan</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* STEP 2: DETAIL PEMESANAN (Formulir Pemesan & Pemilik Tiket)     */}
+        {/* ============================================================== */}
+        {currentStep === 2 && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             {/* Form Column */}
-            <div className="lg:col-span-2 space-y-6">
-              <form onSubmit={handleCreateOrderAndPayment} className="glass-panel p-6 sm:p-8 rounded-3xl border border-zinc-800 space-y-6">
-                <div className="border-b border-zinc-800 pb-4 flex items-center gap-2">
-                  <User className="w-5 h-5 text-purple-400" />
-                  <h3 className="font-extrabold text-lg text-white">Data Pemesan Tiket</h3>
+            <form onSubmit={handleProceedToStep3} className="lg:col-span-7 space-y-6">
+              {/* Bagian 1: Data Pemesan Utama */}
+              <div className="bg-white rounded-3xl p-6 border border-gray-200/90 shadow-sm space-y-4">
+                <div className="border-b border-gray-100 pb-3 flex items-center justify-between">
+                  <h2 className="text-base sm:text-lg font-extrabold text-gray-900 flex items-center gap-2">
+                    <User className="w-4 h-4 text-[#111d5e]" />
+                    Informasi Data Pemesan
+                  </h2>
+                  <span className="text-[11px] font-semibold text-gray-400">Kontak Pengiriman</span>
+                </div>
+
+                <div className="space-y-3.5">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Nama Lengkap Pemesan <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                      <input
+                        type="text"
+                        required
+                        value={buyerName}
+                        onChange={(e) => setBuyerName(e.target.value)}
+                        placeholder="Contoh: Budi Santoso"
+                        className="w-full pl-10 pr-4 py-2.5 bg-gray-50/80 border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#111d5e] transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">
+                        Alamat Email <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                        <input
+                          type="email"
+                          required
+                          value={buyerEmail}
+                          onChange={(e) => setBuyerEmail(e.target.value)}
+                          placeholder="email@example.com"
+                          className="w-full pl-10 pr-4 py-2.5 bg-gray-50/80 border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#111d5e] transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">
+                        Nomor WhatsApp <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <Phone className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                        <input
+                          type="tel"
+                          required
+                          value={buyerPhone}
+                          onChange={(e) => setBuyerPhone(e.target.value)}
+                          placeholder="08xxxxxxxxxx"
+                          className="w-full pl-10 pr-4 py-2.5 bg-gray-50/80 border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#111d5e] transition-all"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Checkbox auto-fill tiket pertama */}
+                <div className="pt-2 border-t border-gray-100">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={useBuyerForFirstTicket}
+                      onChange={(e) => setUseBuyerForFirstTicket(e.target.checked)}
+                      className="w-4 h-4 rounded text-[#111d5e] focus:ring-[#111d5e] border-gray-300"
+                    />
+                    <span className="text-xs text-gray-600 font-medium">
+                      Gunakan data pemesan untuk pemilik Tiket #1
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Bagian 2: Data Pemilik Masing-Masing Tiket */}
+              <div className="bg-white rounded-3xl p-6 border border-gray-200/90 shadow-sm space-y-4">
+                <div className="border-b border-gray-100 pb-3 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base sm:text-lg font-extrabold text-gray-900 flex items-center gap-2">
+                      <Users className="w-4 h-4 text-[#111d5e]" />
+                      Data Pemilik Tiket ({totalPhysicalTickets} Pengunjung)
+                    </h2>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      Nama pada masing-masing tiket akan tercetak langsung pada E-Ticket QR Code.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-300 mb-1.5">Nama Lengkap (Sesuai KTP/Pengunjung)</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder="Nama Pembeli"
-                        className="w-full pl-10 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none focus:border-purple-500"
-                      />
-                      <User className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3.5" />
-                    </div>
-                  </div>
+                  {ticketHolders.map((holder, idx) => (
+                    <div
+                      key={idx}
+                      className="p-4 rounded-2xl bg-gray-50/80 border border-gray-200/80 space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-[#111d5e]">
+                          Tiket #{idx + 1} · {holder.category_name}
+                        </span>
+                        <span className="text-[10px] font-bold text-gray-400 bg-white px-2 py-0.5 rounded-full border border-gray-200">
+                          Pengunjung #{idx + 1}
+                        </span>
+                      </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-300 mb-1.5">Alamat Email (Untuk Pengiriman E-Ticket)</label>
-                    <div className="relative">
-                      <input
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="email@domain.com"
-                        className="w-full pl-10 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none focus:border-purple-500"
-                      />
-                      <Mail className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3.5" />
-                    </div>
-                  </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                            Nama Lengkap Pengunjung <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={holder.name || ""}
+                            onChange={(e) => handleHolderChange(idx, "name", e.target.value)}
+                            placeholder="Nama sesuai identitas"
+                            className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#111d5e] transition-all"
+                          />
+                        </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-zinc-300 mb-1.5">Nomor Handphone (WhatsApp)</label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value)}
-                        placeholder="08123456789"
-                        className="w-full pl-10 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-sm text-white focus:outline-none focus:border-purple-500"
-                      />
-                      <Phone className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3.5" />
+                        <div>
+                          <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                            Email Pengunjung <span className="text-gray-400 font-normal">(Opsional)</span>
+                          </label>
+                          <input
+                            type="email"
+                            value={holder.email || ""}
+                            onChange={(e) => handleHolderChange(idx, "email", e.target.value)}
+                            placeholder="email@example.com"
+                            className="w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#111d5e] transition-all"
+                          />
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ))}
                 </div>
+              </div>
 
-                <div className="pt-4 border-t border-zinc-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs text-zinc-400">
-                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    Data transaksi terlindungi dengan aman
-                  </div>
+              {/* Tombol Navigasi Step 2 */}
+              <div className="flex items-center justify-between gap-4 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCurrentStep(1);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-bold text-xs hover:bg-gray-100 transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Ubah Kategori Tiket
+                </button>
 
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="px-8 py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-lg shadow-purple-600/30 flex items-center gap-2 transition-all disabled:opacity-50"
-                  >
-                    {submitting ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Membuat Order...
-                      </>
-                    ) : (
-                      <>
-                        <CreditCard className="w-4 h-4" />
-                        Lanjut ke Bayar QRIS
-                      </>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
+                <button
+                  type="submit"
+                  disabled={submittingOrder}
+                  className="px-8 py-3.5 rounded-xl bg-[#111d5e] hover:bg-[#0c1543] text-white font-bold text-xs sm:text-sm shadow-md flex items-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                >
+                  {submittingOrder ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Menyiapkan Midtrans...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Lanjut ke Pembayaran</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
 
-            {/* Order Summary Sidebar */}
-            <div className="space-y-6">
-              <div className="glass-panel p-6 rounded-3xl border border-purple-500/30 space-y-4">
-                <h3 className="font-extrabold text-base text-white border-b border-zinc-800 pb-3 flex items-center gap-2">
-                  <Ticket className="w-4 h-4 text-purple-400" />
+            {/* Sidebar Order Summary */}
+            <div className="lg:col-span-5 space-y-4 sticky top-24">
+              <div className="bg-white rounded-3xl p-6 border border-gray-200/90 shadow-sm space-y-4">
+                <h3 className="font-extrabold text-base text-gray-900 border-b border-gray-100 pb-3 flex items-center gap-2">
+                  <ShoppingBag className="w-4 h-4 text-[#111d5e]" />
                   Ringkasan Pesanan
                 </h3>
 
-                <div className="space-y-2 text-xs">
-                  <p className="font-bold text-sm text-white">{event?.name}</p>
-                  <p className="text-zinc-400 flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5 text-purple-400" />
-                    {formatDate(event?.event_date)}
+                {/* Items Breakdown */}
+                <div className="space-y-2.5">
+                  {Object.entries(selectedItems).map(([catId, qty]) => {
+                    const cat = categories.find((c) => c.id === catId);
+                    if (!cat) return null;
+                    const bundleSize = cat.tickets_per_package || 1;
+
+                    return (
+                      <div key={catId} className="flex items-start justify-between text-xs">
+                        <div>
+                          <p className="font-bold text-gray-900">{cat.name}</p>
+                          <p className="text-[11px] text-gray-500">
+                            {qty} paket × {formatRupiah(cat.price)}
+                            {bundleSize > 1 && ` (${qty * bundleSize} tiket)`}
+                          </p>
+                        </div>
+                        <span className="font-extrabold text-gray-900">
+                          {formatRupiah(Number(cat.price) * qty)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="border-t border-gray-100 pt-3 space-y-2 text-xs">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Subtotal Tiket</span>
+                    <span className="font-bold">{formatRupiah(subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Biaya Layanan Platform</span>
+                    <span className="font-bold">{formatRupiah(adminFee)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm pt-2 border-t border-gray-100 text-gray-900">
+                    <span className="font-black">Total Pembayaran</span>
+                    <span className="font-black text-[#111d5e] text-base">
+                      {formatRupiah(grandTotal)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* STEP 3: METODE PEMBAYARAN MIDTRANS SANDBOX SNAP                */}
+        {/* ============================================================== */}
+        {currentStep === 3 && (
+          <div className="max-w-2xl mx-auto space-y-6">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200/90 shadow-sm space-y-6 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-[#111d5e] mx-auto shadow-sm">
+                <CreditCard className="w-7 h-7" />
+              </div>
+
+              <div className="space-y-1">
+                <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
+                  Selesaikan Pembayaran Anda
+                </h2>
+                <p className="text-xs text-gray-500">
+                  Pesanan tagihan <strong className="text-gray-800">{order?.invoice_code || "INV-TAGIHAN"}</strong> siap dibayar via Midtrans Sandbox Snap Gateway.
+                </p>
+              </div>
+
+              {/* Total Tagihan Box */}
+              <div className="p-4 rounded-2xl bg-[#111d5e]/5 border border-[#111d5e]/20 max-w-sm mx-auto">
+                <span className="text-[11px] font-bold text-gray-500 block">TOTAL TAGIHAN</span>
+                <span className="text-2xl sm:text-3xl font-black text-[#111d5e]">
+                  {formatRupiah(order?.total || grandTotal)}
+                </span>
+                <span className="text-[11px] text-gray-500 block mt-1">
+                  {totalPhysicalTickets} Tiket Fisik · {buyerName}
+                </span>
+              </div>
+
+              {/* Supported Midtrans Payment Channels */}
+              <div className="space-y-3 pt-2 text-left bg-gray-50 p-4 sm:p-5 rounded-2xl border border-gray-200/80">
+                <span className="text-xs font-black text-gray-800 block">
+                  Metode Pembayaran Tersedia (Midtrans Sandbox):
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[11px] font-bold text-gray-700">
+                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-2xs">
+                    QRIS Instan
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-2xs">
+                    BCA / Mandiri VA
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-2xs">
+                    BNI / BRI VA
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-2xs">
+                    Kartu Kredit Demo
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500 text-center pt-1">
+                  Terintegrasi langsung dengan Snap API resmi Midtrans Sandbox.
+                </p>
+              </div>
+
+              {/* Main Pay with Midtrans Button */}
+              <div className="space-y-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleOpenMidtransSnap}
+                  className="w-full py-4 rounded-2xl font-black text-sm bg-[#111d5e] hover:bg-[#0c1543] active:scale-98 text-white shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <Lock className="w-4 h-4" />
+                  <span>Buka Pembayaran Midtrans Snap</span>
+                </button>
+
+                {/* Simulator Option for Sandbox Demo */}
+                <div className="pt-4 border-t border-gray-100 space-y-2">
+                  <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Mode Pengujian / Demonstrasi UKK:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleSimulatePaymentDemo}
+                    disabled={verifyingPayment}
+                    className="w-full py-3 rounded-2xl font-bold text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {verifyingPayment ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>Memverifikasi Pembayaran...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Simulasikan Pembayaran Berhasil (Sandbox Simulator)</span>
+                      </>
+                    )}
+                  </button>
+                  <p className="text-[10px] text-gray-400">
+                    Gunakan simulasi ini untuk langsung memverifikasi transaksi dan menerbitkan E-Ticket QR Code tanpa memerlukan tunnel webhook eksternal.
                   </p>
                 </div>
-
-                <div className="pt-3 border-t border-zinc-800 space-y-2 text-xs">
-                  <div className="flex justify-between text-zinc-300">
-                    <span>Kategori Tiket</span>
-                    <strong className="text-purple-300 uppercase">{category?.name}</strong>
-                  </div>
-                  <div className="flex justify-between text-zinc-300">
-                    <span>Harga Satuan</span>
-                    <span>{formatRupiah(category?.price)}</span>
-                  </div>
-                  <div className="flex justify-between text-zinc-300">
-                    <span>Jumlah</span>
-                    <span>{quantity} Tiket</span>
-                  </div>
-                  <div className="flex justify-between text-zinc-300 pt-2 border-t border-zinc-800/60">
-                    <span>Subtotal Tiket</span>
-                    <span>{formatRupiah(totalPrice)}</span>
-                  </div>
-                  <div className="flex justify-between text-zinc-300">
-                    <span>Biaya Layanan System</span>
-                    <span>{formatRupiah(adminFee)}</span>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-zinc-800 flex items-center justify-between">
-                  <span className="font-bold text-sm text-white">Total Tagihan</span>
-                  <span className="font-extrabold text-lg text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-pink-400">
-                    {formatRupiah(grandTotal)}
-                  </span>
-                </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* STEP 2: QRIS PAYMENT GATEWAY DISPLAY */}
-        {checkoutStep === "qris" && (
-          <div className="max-w-xl mx-auto glass-panel p-8 rounded-3xl border border-purple-500/40 text-center space-y-6 shadow-2xl">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-xs font-bold uppercase tracking-wider">
-              <QrCode className="w-4 h-4" />
-              <span>Payment Gateway QRIS Aktif</span>
-            </div>
+        {/* ============================================================== */}
+        {/* STEP 4: HASIL TRANSAKSI DAN E-TICKET (Physical Pass Style)      */}
+        {/* ============================================================== */}
+        {currentStep === 4 && (
+          <div className="space-y-8">
+            {/* Success Confirmation Banner */}
+            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-emerald-200/90 shadow-sm text-center space-y-3 print:hidden">
+              <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
 
-            <div className="space-y-1">
-              <h2 className="text-2xl font-extrabold text-white">Pindai QRIS Untuk Membayar</h2>
-              <p className="text-xs text-zinc-400">Gunakan GoPay, OVO, Dana, ShopeePay, LinkAja, atau Mobile Banking pilihanmu</p>
-            </div>
+              <div className="space-y-1">
+                <span className="text-[11px] font-black uppercase tracking-widest text-emerald-700">
+                  Pembayaran Terverifikasi
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
+                  Transaksi Berhasil! E-Ticket Siap
+                </h2>
+                <p className="text-xs text-gray-500 max-w-md mx-auto">
+                  Terima kasih, <strong>{order?.buyer_name || buyerName}</strong>. E-Ticket resmi kamu telah berhasil diterbitkan oleh sistem TixGoo.
+                </p>
+              </div>
 
-            {/* Countdown timer */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs font-bold">
-              <Clock className="w-4 h-4" />
-              Selesaikan Pembayaran Dalam: <span className="font-mono text-sm">{formatTimer(timeLeft)}</span>
-            </div>
+              {/* Transaction Summary Chips */}
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-2 text-xs">
+                <div className="px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-700">
+                  Invoice: <strong>{order?.invoice_code || "INV-CONFIRMED"}</strong>
+                </div>
+                <div className="px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-700">
+                  Total: <strong>{formatRupiah(order?.total || grandTotal)}</strong>
+                </div>
+                <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold">
+                  Status: LUNAS / SETTLEMENT
+                </div>
+              </div>
 
-            {/* QR Code Big Container */}
-            <div className="flex flex-col items-center justify-center p-6 bg-zinc-950 rounded-2xl border border-zinc-800 space-y-3">
-              <QRCode value={order?.invoice_code || "QRIS-PAYMENT-CODE"} size={200} />
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] text-zinc-400 font-bold uppercase">KODE INVOICE:</span>
-                <span className="font-mono text-xs font-bold text-purple-300">{order?.invoice_code}</span>
+              {/* Action Buttons for Step 4 */}
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={handlePrintTickets}
+                  className="px-5 py-2.5 rounded-xl bg-[#111d5e] hover:bg-[#0c1543] text-white font-bold text-xs shadow-md flex items-center gap-2 transition-all cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" /> Cetak / Unduh E-Ticket (PDF)
+                </button>
+
+                <Link
+                  href="/tickets"
+                  className="px-5 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold text-xs flex items-center gap-2 transition-all"
+                >
+                  <Ticket className="w-4 h-4" /> Lihat di Tiket Saya
+                </Link>
+
+                <Link
+                  href="/"
+                  className="px-5 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-all"
+                >
+                  Kembali ke Beranda
+                </Link>
               </div>
             </div>
 
-            <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-between text-sm">
-              <span className="text-zinc-400 font-semibold">Total Nominal Pembayaran:</span>
-              <span className="font-extrabold text-xl text-purple-300">{formatRupiah(grandTotal)}</span>
-            </div>
-
-            {/* Simulated Payment Action */}
-            <div className="pt-2 space-y-3">
-              <button
-                onClick={handleSimulateQRISPayment}
-                disabled={paying}
-                className="w-full py-4 rounded-2xl font-bold text-sm bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white shadow-xl shadow-emerald-600/30 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-              >
-                {paying ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Memverifikasi Pembayaran...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-5 h-5" />
-                    Simulasi Bayar QRIS Instan (Konfirmasi)
-                  </>
-                )}
-              </button>
-              <p className="text-[11px] text-zinc-400">Tekan tombol simulasi di atas untuk menyelesaikan transaksi pembayaran QRIS.</p>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 3: PAYMENT SUCCESS & E-TICKET ISSUED */}
-        {checkoutStep === "success" && (
-          <div className="max-w-md mx-auto glass-panel p-8 rounded-3xl border border-emerald-500/40 text-center space-y-6 shadow-2xl">
-            <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto">
-              <CheckCircle2 className="w-10 h-10" />
-            </div>
-
-            <div className="space-y-2">
-              <h2 className="text-2xl font-extrabold text-white">Pembayaran Berhasil!</h2>
-              <p className="text-sm text-zinc-300">
-                E-Ticket QR Code resmimu telah berhasil diterbitkan oleh sistem dan tersimpan di akunmu.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-zinc-900 border border-zinc-800 space-y-2 text-xs text-left">
-              <div className="flex justify-between">
-                <span className="text-zinc-400">No Invoice:</span>
-                <span className="font-mono text-purple-300 font-bold">{order?.invoice_code}</span>
+            {/* E-TICKETS DIGITAL REALISTIS (Concert Pass Style) */}
+            <div className="space-y-6">
+              <div className="flex items-center justify-between print:hidden">
+                <h3 className="text-lg font-black text-gray-900 tracking-tight flex items-center gap-2">
+                  <Ticket className="w-5 h-5 text-[#111d5e]" />
+                  Daftar E-Ticket Konser Resmi ({issuedTickets.length} Tiket)
+                </h3>
+                <span className="text-xs text-gray-500 font-medium">
+                  Tunjukkan QR Code berikut ke petugas pintu masuk konser.
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Status Transaksi:</span>
-                <span className="font-bold text-emerald-400 uppercase">LUNAS</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">Total Dibayar:</span>
-                <span className="font-bold text-white">{formatRupiah(grandTotal)}</span>
-              </div>
-            </div>
 
-            <div className="pt-2 flex flex-col gap-3">
-              <Link
-                href="/tickets"
-                className="w-full py-4 rounded-2xl font-bold text-sm bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 hover:from-purple-500 hover:to-pink-500 text-white shadow-xl shadow-purple-600/30 flex items-center justify-center gap-2 transition-all"
-              >
-                <Ticket className="w-5 h-5" />
-                Lihat E-Ticket Saya (Tiket Saya)
-              </Link>
-              <Link
-                href="/"
-                className="w-full py-3 rounded-xl text-xs font-semibold text-zinc-400 hover:text-white"
-              >
-                Kembali ke Beranda Konser
-              </Link>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {issuedTickets.map((tkt, idx) => (
+                  <div
+                    key={tkt.id || idx}
+                    className="bg-white rounded-3xl border border-gray-200/90 shadow-lg overflow-hidden flex flex-col justify-between relative group hover:shadow-xl transition-shadow"
+                  >
+                    {/* Top Concert Pass Header */}
+                    <div className="bg-[#111d5e] text-white p-5 space-y-2 relative overflow-hidden">
+                      <div className="flex items-center justify-between relative z-10">
+                        <span className="text-xs font-black tracking-widest text-blue-300 uppercase">
+                          ✦ TixGoo Official Pass
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500 text-white">
+                          VALID / ACTIVE
+                        </span>
+                      </div>
+
+                      <h4 className="text-lg font-black text-white tracking-tight leading-snug relative z-10">
+                        {event?.name}
+                      </h4>
+
+                      <div className="flex items-center gap-4 text-[11px] text-gray-200 relative z-10">
+                        <span>{formatDate(event?.event_date)}</span>
+                        <span>·</span>
+                        <span>{event?.venue || event?.city}</span>
+                      </div>
+
+                      {/* Subtle watermark badge */}
+                      <div className="absolute -bottom-6 -right-6 w-24 h-24 rounded-full bg-white/5 pointer-events-none" />
+                    </div>
+
+                    {/* Ticket Body & QR Code Pass */}
+                    <div className="p-6 flex flex-col sm:flex-row items-center gap-6 justify-between">
+                      {/* Ticket Holder Info */}
+                      <div className="space-y-3 flex-1 text-left w-full sm:w-auto">
+                        <div>
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                            Nama Pemilik Tiket
+                          </span>
+                          <span className="text-sm font-black text-gray-900 block">
+                            {tkt.owner_name || order?.buyer_name || buyerName}
+                          </span>
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                            Kategori Tiket
+                          </span>
+                          <span className="text-xs font-extrabold text-[#111d5e] block">
+                            {tkt.ticket_category || tkt.category_name || "General Pass"}
+                          </span>
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                            Kode Tiket Unik
+                          </span>
+                          <span className="text-xs font-mono font-bold tracking-widest text-gray-800 bg-gray-100 px-2.5 py-1 rounded-lg inline-block">
+                            {tkt.ticket_code}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Unique QR Code Stamp */}
+                      <div className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl border border-gray-200 shadow-sm shrink-0">
+                        {tkt.qr_code && tkt.qr_code.startsWith("data:image") ? (
+                          <img
+                            src={tkt.qr_code}
+                            alt={`QR ${tkt.ticket_code}`}
+                            className="w-32 h-32 object-contain"
+                          />
+                        ) : (
+                          <div className="w-32 h-32 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400">
+                            <Ticket className="w-8 h-8" />
+                          </div>
+                        )}
+                        <span className="text-[9px] font-mono text-gray-400 mt-1 uppercase">
+                          Scan di Venue
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Bottom Security Perforation Barcode Line */}
+                    <div className="px-6 py-2.5 bg-gray-50 border-t border-dashed border-gray-200 flex items-center justify-between text-[10px] text-gray-400 font-mono">
+                      <span>#TIKET-{idx + 1}</span>
+                      <span>SECURE QR VALIDATION</span>
+                      <span>TIXGOO ECOSYSTEM</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}

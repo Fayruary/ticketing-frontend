@@ -45,10 +45,10 @@ export default function MyTicketsPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-white text-gray-700 font-sans selection:bg-[#111d5e] selection:text-white">
+    <div className="min-h-screen flex flex-col bg-[#f8fafc] text-gray-700 font-sans selection:bg-[#111d5e] selection:text-white">
       <Navbar />
 
-      <main className="flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full bg-white">
+      <main className="flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full">
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 border-b border-gray-100 pb-6">
           <div>

@@ -20,9 +20,15 @@ import type { User as AuthUser } from "@/lib/auth";
 import {
   LayoutDashboard, CalendarDays, Users, Package, Receipt, ImageIcon, LogOut, Wallet,
   Plus, Trash2, Pencil, Menu, X, Upload, Link as LinkIcon, Check, Ticket,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 
 type AdminTab = "overview" | "events" | "banners" | "packages" | "users" | "orders";
+
+const PAGE_SIZE = 5;
+
+/** Biaya layanan website per order lunas (Rp). Pendapatan platform dihitung dari ini, bukan dari harga tiket. */
+const SERVICE_FEE = 5000;
 
 const FALLBACK_IMG =
   "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1200&q=80";
@@ -64,6 +70,87 @@ const TAB_DESC: Record<AdminTab, string> = {
   orders: "Semua transaksi pembelian tiket.",
 };
 
+/* ---------- Pagination ---------- */
+
+/** Potong list menjadi halaman berisi PAGE_SIZE data. Halaman otomatis menyesuaikan saat data berkurang. */
+function usePagination<T>(items: T[], pageSize = PAGE_SIZE) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const current = Math.min(page, totalPages);
+  const pageItems = items.slice((current - 1) * pageSize, current * pageSize);
+
+  return { page: current, setPage, totalPages, pageItems, total: items.length, pageSize };
+}
+
+function Pagination({
+  page, totalPages, total, pageSize, onChange, inCard = false,
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  onChange: (p: number) => void;
+  inCard?: boolean;
+}) {
+  if (total <= pageSize) return null;
+
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  const btn =
+    "inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50 hover:text-gray-900 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:active:scale-100";
+
+  return (
+    <nav
+      aria-label="Navigasi halaman"
+      className={`flex items-center justify-between gap-3 ${
+        inCard ? "px-5 py-3 border-t border-gray-100" : "pt-1"
+      }`}
+    >
+      <p className="text-sm text-gray-500">
+        Menampilkan <span className="font-medium text-gray-700">{from}–{to}</span> dari{" "}
+        <span className="font-medium text-gray-700">{total}</span>
+      </p>
+
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onChange(page - 1)}
+          disabled={page === 1}
+          aria-label="Halaman sebelumnya"
+          title="Sebelumnya"
+          className={btn}
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        <span
+          aria-live="polite"
+          aria-label={`Halaman ${page} dari ${totalPages}`}
+          className="inline-flex items-center justify-center h-9 min-w-9 px-3 rounded-lg bg-[#111d5e] text-white text-sm font-medium tabular-nums"
+        >
+          {page}
+        </span>
+
+        <button
+          type="button"
+          onClick={() => onChange(page + 1)}
+          disabled={page === totalPages}
+          aria-label="Halaman berikutnya"
+          title="Berikutnya"
+          className={btn}
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 /* ---------- Small building blocks ---------- */
 function Badge({ tone, children }: { tone: keyof typeof TONE; children: React.ReactNode }) {
   return (
@@ -83,7 +170,14 @@ function Field({ label, children, className = "" }: { label: string; children: R
   );
 }
 
-function Table({ head, children, empty }: { head: { label: string; align?: "right" | "center" }[]; children: React.ReactNode; empty?: string }) {
+function Table({
+  head, children, empty, footer,
+}: {
+  head: { label: string; align?: "right" | "center" }[];
+  children: React.ReactNode;
+  empty?: string;
+  footer?: React.ReactNode;
+}) {
   const hasRows = React.Children.count(children) > 0;
   return (
     <div className={`${UI.card} overflow-hidden`}>
@@ -102,6 +196,7 @@ function Table({ head, children, empty }: { head: { label: string; align?: "righ
         </table>
       </div>
       {!hasRows && <p className="text-sm text-gray-500 text-center py-10">{empty || "Belum ada data."}</p>}
+      {footer}
     </div>
   );
 }
@@ -189,6 +284,14 @@ export default function AdminPage() {
   const [showPackageForm, setShowPackageForm] = useState(false);
   const [packageForm, setPackageForm] = useState<Partial<CooperationPackage>>({});
 
+  // Pagination: 5 data per halaman untuk setiap list
+  const eventPg = usePagination(events);
+  const ticketPg = usePagination(ticketCategories);
+  const bannerPg = usePagination(banners);
+  const packagePg = usePagination(packages);
+  const userPg = usePagination(users);
+  const orderPg = usePagination(orders);
+
   useEffect(() => {
     if (!authLoading && (!isAuthenticated || role !== "admin")) router.push("/login");
   }, [authLoading, isAuthenticated, role]);
@@ -199,6 +302,12 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (selectedEventForTickets) fetchTicketCategories(selectedEventForTickets);
+  }, [selectedEventForTickets]);
+
+  // Ganti event pada panel kategori tiket: kembali ke halaman 1
+  const resetTicketPage = ticketPg.setPage;
+  useEffect(() => {
+    resetTicketPage(1);
   }, [selectedEventForTickets]);
 
   const fetchAll = async () => {
@@ -410,9 +519,27 @@ export default function AdminPage() {
     { key: "poster", label: "URL poster", type: "url" },
   ];
 
+  // Jumlah tiket dalam satu order (menyesuaikan struktur data order; default 1)
+  const ticketCountOf = (o: Order): number => {
+    const a = o as any;
+    if (typeof a.quantity === "number") return a.quantity;
+    if (typeof a.total_tickets === "number") return a.total_tickets;
+    if (Array.isArray(a.items)) return a.items.reduce((s: number, i: any) => s + (Number(i.quantity) || 1), 0);
+    if (Array.isArray(a.tickets)) return a.tickets.length;
+    return 1;
+  };
+
+  const paidOrders = orders.filter((o) => o.status === "paid");
+
+  // Tiket terjual: jumlah tiket dari semua order lunas
+  const ticketsSold = paidOrders.reduce((sum, o) => sum + ticketCountOf(o), 0);
+
+  // Pendapatan platform: biaya layanan per order lunas (paket 2 tiket tetap dihitung 1 kali)
+  const serviceRevenue = paidOrders.length * SERVICE_FEE;
+
   const stats = [
-    { label: "Total pendapatan", value: formatRupiah(dashboard?.total_revenue || 0), icon: <Wallet className="w-5 h-5" />, chip: "bg-blue-50 text-[#111d5e]" },
-    { label: "Tiket terjual", value: (dashboard?.total_tickets || 0).toLocaleString("id-ID"), icon: <Ticket className="w-5 h-5" />, chip: "bg-emerald-50 text-emerald-600" },
+    { label: "Pendapatan layanan", value: formatRupiah(serviceRevenue), icon: <Wallet className="w-5 h-5" />, chip: "bg-blue-50 text-[#111d5e]" },
+    { label: "Tiket terjual", value: ticketsSold.toLocaleString("id-ID"), icon: <Ticket className="w-5 h-5" />, chip: "bg-emerald-50 text-emerald-600" },
     { label: "Event", value: String(dashboard?.total_events || events.length), icon: <CalendarDays className="w-5 h-5" />, chip: "bg-amber-50 text-amber-600" },
     { label: "Pengguna", value: String(dashboard?.total_users || users.length), icon: <Users className="w-5 h-5" />, chip: "bg-violet-50 text-violet-600" },
   ];
@@ -553,7 +680,7 @@ export default function AdminPage() {
                   <button onClick={() => setTab("orders")} className={UI.btnLink}>Lihat semua</button>
                 </div>
                 <Table head={orderHead} empty="Belum ada transaksi.">
-                  {orders.slice(0, 8).map(orderRow)}
+                  {orders.slice(0, PAGE_SIZE).map(orderRow)}
                 </Table>
               </section>
             </div>
@@ -620,8 +747,9 @@ export default function AdminPage() {
               <Table
                 head={[{ label: "Nama event" }, { label: "Kota" }, { label: "Tanggal" }, { label: "Status" }, { label: "", align: "right" }]}
                 empty="Belum ada event."
+                footer={<Pagination {...eventPg} onChange={eventPg.setPage} inCard />}
               >
-                {events.map((event) => (
+                {eventPg.pageItems.map((event) => (
                   <tr key={event.id} className="hover:bg-gray-50">
                     <td className={UI.td}>
                       <div className="flex items-center gap-3">
@@ -726,25 +854,28 @@ export default function AdminPage() {
                   {ticketCategories.length === 0 ? (
                     <p className="text-sm text-gray-500 text-center py-6">Event ini belum punya kategori tiket.</p>
                   ) : (
-                    <ul className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
-                      {ticketCategories.map((cat) => (
-                        <li key={cat.id} className="flex items-center justify-between px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-                            <span className="font-medium text-gray-900">{cat.name}</span>
-                            <span className="text-gray-600">{formatRupiah(cat.price)}</span>
-                            <span className="text-gray-500">Stok {cat.stock}</span>
-                          </div>
-                          <div className="flex items-center gap-0.5">
-                            <button onClick={() => openEditTicket(cat)} className={UI.iconBtn} title="Edit">
-                              <Pencil className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleDeleteTicketCategory(cat.id)} className={UI.iconBtnDanger} title="Hapus">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
+                    <>
+                      <ul className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
+                        {ticketPg.pageItems.map((cat) => (
+                          <li key={cat.id} className="flex items-center justify-between px-4 py-3">
+                            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+                              <span className="font-medium text-gray-900">{cat.name}</span>
+                              <span className="text-gray-600">{formatRupiah(cat.price)}</span>
+                              <span className="text-gray-500">Stok {cat.stock}</span>
+                            </div>
+                            <div className="flex items-center gap-0.5">
+                              <button onClick={() => openEditTicket(cat)} className={UI.iconBtn} title="Edit">
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteTicketCategory(cat.id)} className={UI.iconBtnDanger} title="Hapus">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                      <Pagination {...ticketPg} onChange={ticketPg.setPage} />
+                    </>
                   )}
                 </section>
               )}
@@ -900,48 +1031,51 @@ export default function AdminPage() {
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {banners.map((banner) => (
-                    <article key={banner.id} className={`${UI.card} overflow-hidden flex flex-col`}>
-                      <div className="aspect-[16/9] bg-gray-100">
-                        <img
-                          src={resolveBannerImageUrl(banner.image || banner.image_url)}
-                          alt={banner.title}
-                          className={`w-full h-full object-cover ${banner.is_active ? "" : "grayscale opacity-60"}`}
-                          onError={(e: any) => { e.target.src = FALLBACK_IMG; }}
-                        />
-                      </div>
-                      <div className="p-4 flex-1 flex flex-col gap-3">
-                        <div className="min-w-0">
-                          <h4 className="text-sm font-semibold text-gray-900 line-clamp-2">{banner.title}</h4>
-                          <p className="text-xs text-gray-500 mt-1 truncate">{banner.link_url || "/events"}</p>
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {bannerPg.pageItems.map((banner) => (
+                      <article key={banner.id} className={`${UI.card} overflow-hidden flex flex-col`}>
+                        <div className="aspect-[16/9] bg-gray-100">
+                          <img
+                            src={resolveBannerImageUrl(banner.image || banner.image_url)}
+                            alt={banner.title}
+                            className={`w-full h-full object-cover ${banner.is_active ? "" : "grayscale opacity-60"}`}
+                            onError={(e: any) => { e.target.src = FALLBACK_IMG; }}
+                          />
                         </div>
-                        <div className="flex items-center justify-between mt-auto pt-3 border-t border-gray-100">
-                          <button
-                            onClick={() => handleToggleBanner(banner.id)}
-                            className="flex items-center gap-2 text-sm text-gray-700"
-                            title={banner.is_active ? "Nonaktifkan" : "Aktifkan"}
-                            role="switch"
-                            aria-checked={!!banner.is_active}
-                          >
-                            <span className={`relative w-8 h-[18px] rounded-full transition-colors ${banner.is_active ? "bg-emerald-500" : "bg-gray-300"}`}>
-                              <span className={`absolute top-[2px] left-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${banner.is_active ? "translate-x-[14px]" : ""}`} />
-                            </span>
-                            {banner.is_active ? "Aktif" : "Nonaktif"}
-                          </button>
-                          <div className="flex items-center gap-0.5">
-                            <button onClick={() => openEditBanner(banner)} className={UI.iconBtn} title="Edit">
-                              <Pencil className="w-4 h-4" />
+                        <div className="p-4 flex-1 flex flex-col gap-3">
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-semibold text-gray-900 line-clamp-2">{banner.title}</h4>
+                            <p className="text-xs text-gray-500 mt-1 truncate">{banner.link_url || "/events"}</p>
+                          </div>
+                          <div className="flex items-center justify-between mt-auto pt-3 border-t border-gray-100">
+                            <button
+                              onClick={() => handleToggleBanner(banner.id)}
+                              className="flex items-center gap-2 text-sm text-gray-700"
+                              title={banner.is_active ? "Nonaktifkan" : "Aktifkan"}
+                              role="switch"
+                              aria-checked={!!banner.is_active}
+                            >
+                              <span className={`relative w-8 h-[18px] rounded-full transition-colors ${banner.is_active ? "bg-emerald-500" : "bg-gray-300"}`}>
+                                <span className={`absolute top-[2px] left-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${banner.is_active ? "translate-x-[14px]" : ""}`} />
+                              </span>
+                              {banner.is_active ? "Aktif" : "Nonaktif"}
                             </button>
-                            <button onClick={() => handleDeleteBanner(banner.id)} className={UI.iconBtnDanger} title="Hapus">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center gap-0.5">
+                              <button onClick={() => openEditBanner(banner)} className={UI.iconBtn} title="Edit">
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteBanner(banner.id)} className={UI.iconBtnDanger} title="Hapus">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
+                      </article>
+                    ))}
+                  </div>
+                  <Pagination {...bannerPg} onChange={bannerPg.setPage} />
+                </>
               )}
             </div>
           )}
@@ -998,23 +1132,26 @@ export default function AdminPage() {
               {packages.length === 0 ? (
                 <p className={`${UI.card} text-sm text-gray-500 text-center py-10`}>Belum ada paket kerja sama.</p>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {packages.map((pkg) => (
-                    <div key={pkg.id} className={`${UI.card} p-5 flex flex-col border-t-[3px] border-t-[#111d5e]`}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h4 className="text-base font-semibold text-gray-900">{pkg.name}</h4>
-                          <p className="text-sm text-gray-500">{pkg.duration}</p>
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {packagePg.pageItems.map((pkg) => (
+                      <div key={pkg.id} className={`${UI.card} p-5 flex flex-col border-t-[3px] border-t-[#111d5e]`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <h4 className="text-base font-semibold text-gray-900">{pkg.name}</h4>
+                            <p className="text-sm text-gray-500">{pkg.duration}</p>
+                          </div>
+                          <button onClick={() => handleDeletePackage(pkg.id)} className={UI.iconBtnDanger} title="Hapus">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
-                        <button onClick={() => handleDeletePackage(pkg.id)} className={UI.iconBtnDanger} title="Hapus">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <p className="text-xl font-semibold text-[#111d5e] mt-4 tabular-nums">{formatRupiah(pkg.price)}</p>
+                        <p className="text-sm text-gray-600 mt-2 leading-relaxed">{pkg.description || "-"}</p>
                       </div>
-                      <p className="text-xl font-semibold text-[#111d5e] mt-4 tabular-nums">{formatRupiah(pkg.price)}</p>
-                      <p className="text-sm text-gray-600 mt-2 leading-relaxed">{pkg.description || "-"}</p>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                  <Pagination {...packagePg} onChange={packagePg.setPage} />
+                </>
               )}
             </div>
           )}
@@ -1026,8 +1163,9 @@ export default function AdminPage() {
               <Table
                 head={[{ label: "Nama" }, { label: "Email" }, { label: "Telepon" }, { label: "Role" }, { label: "", align: "right" }]}
                 empty="Belum ada pengguna."
+                footer={<Pagination {...userPg} onChange={userPg.setPage} inCard />}
               >
-                {users.map((u) => (
+                {userPg.pageItems.map((u) => (
                   <tr key={u.id} className="hover:bg-gray-50">
                     <td className={UI.td}>
                       <div className="flex items-center gap-3">
@@ -1072,8 +1210,12 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
-              <Table head={orderHead} empty="Belum ada order.">
-                {orders.map(orderRow)}
+              <Table
+                head={orderHead}
+                empty="Belum ada order."
+                footer={<Pagination {...orderPg} onChange={orderPg.setPage} inCard />}
+              >
+                {orderPg.pageItems.map(orderRow)}
               </Table>
             </div>
           )}

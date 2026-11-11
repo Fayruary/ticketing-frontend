@@ -21,6 +21,32 @@ interface AuthSliderProps {
   initialMode?: "login" | "register";
 }
 
+// Tombol mata: mata terbuka = sandi terlihat, mata silang = sandi tersembunyi
+function PasswordToggle({
+  show,
+  onToggle,
+}: {
+  show: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={show ? "Sembunyikan kata sandi" : "Tampilkan kata sandi"}
+      className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+    >
+      {show ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+    </button>
+  );
+}
+
+const ICON_LEFT =
+  "w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none";
+
+const INPUT_BASE =
+  "w-full py-2.5 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111d5e] focus:border-transparent transition-all";
+
 export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -149,32 +175,74 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
 
   return (
     <div className="relative w-full min-h-screen bg-white font-sans text-gray-900 overflow-x-hidden">
+      {/* Sembunyikan scrollbar halaman (tetap bisa di-scroll), aktif hanya selama halaman ini tampil */}
+      <style>{`
+        html { scrollbar-width: none; -ms-overflow-style: none; }
+        html::-webkit-scrollbar { display: none; }
+      `}</style>
+
       {/* ============================================================== */}
-      {/* SISI FOTO BERSIH: SLIDING PANEL (DESKTOP)                      */}
-      {/* Meluncur mulus dari Kiri ke Kanan saat mode berubah            */}
+      {/* SISI ILUSTRASI: SLIDING PANEL (DESKTOP)                        */}
       {/* ============================================================== */}
       <div
-        className={`hidden lg:block absolute top-0 bottom-0 left-0 w-1/2 h-full z-20 bg-gray-950 overflow-hidden select-none transition-transform duration-700 ease-in-out ${
+        className={`hidden lg:block absolute top-0 bottom-0 left-0 w-1/2 h-full z-20 select-none transition-transform duration-700 ease-in-out ${
           isRegister ? "translate-x-full" : "translate-x-0"
         }`}
         style={{ willChange: "transform" }}
       >
-        <Image
-          src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=1600&auto=format&fit=crop"
-          alt="Concert Experience"
-          fill
-          priority
-          unoptimized
-          className="object-cover object-center"
-        />
+        {/* Latar biru + lingkaran (di-clip di sini saja) */}
+        <div className="absolute inset-0 overflow-hidden bg-[#2a4bb3]">
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+            <div className="absolute -top-28 -right-28 w-[26rem] h-[26rem] rounded-full bg-[#4a6fe0]/45" />
+            <div className="absolute top-1/3 -left-24 w-72 h-72 rounded-full bg-[#4a6fe0]/25" />
+            <div className="absolute -bottom-44 -left-28 w-[36rem] h-[36rem] rounded-full bg-[#1f3a96]/70" />
+            <div className="absolute -bottom-20 -right-20 w-64 h-64 rounded-full bg-[#1f3a96]/40" />
+          </div>
+
+          <div className="relative z-10 h-full flex flex-col">
+            <div className="relative flex-1 mx-24 mt-16 mb-12">
+              <Image
+                src="/illustrations/Music_festival-bro.svg"
+                alt="Ilustrasi festival musik TixGoo"
+                fill
+                priority
+                unoptimized
+                className="object-contain object-center"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Tepi melengkung kanan (login), melebar 2px keluar panel agar tidak ada celah */}
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className={`pointer-events-none absolute top-0 bottom-0 -right-[2px] h-full w-[calc(7rem+2px)] fill-white transition-opacity duration-700 ease-in-out ${
+            isRegister ? "opacity-0" : "opacity-100"
+          }`}
+        >
+          <path d="M100 0 L62 0 C30 14 30 36 58 48 C88 61 92 84 55 100 L100 100 Z" />
+        </svg>
+
+        {/* Tepi melengkung kiri (register) */}
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          className={`pointer-events-none absolute top-0 bottom-0 -left-[2px] h-full w-[calc(7rem+2px)] fill-white [transform:scaleX(-1)] transition-opacity duration-700 ease-in-out ${
+            isRegister ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <path d="M100 0 L62 0 C30 14 30 36 58 48 C88 61 92 84 55 100 L100 100 Z" />
+        </svg>
       </div>
 
       {/* ============================================================== */}
       {/* SISI FORM: SLIDING FORM CONTAINER (DESKTOP & MOBILE)           */}
-      {/* Meluncur ke arah berlawanan di desktop, carousel di mobile     */}
       {/* ============================================================== */}
       <div
-        className={`w-full lg:w-1/2 min-h-screen flex flex-col justify-center px-6 py-10 sm:px-12 lg:px-14 xl:px-20 bg-white z-10 overflow-y-auto lg:absolute lg:top-0 lg:bottom-0 lg:right-0 lg:h-full transition-transform duration-700 ease-in-out ${
+        className={`[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden w-full lg:w-1/2 min-h-screen flex flex-col justify-center px-6 py-10 sm:px-12 lg:px-14 xl:px-20 bg-white z-10 overflow-y-auto lg:absolute lg:top-0 lg:bottom-0 lg:right-0 lg:h-full transition-transform duration-700 ease-in-out ${
           isRegister ? "lg:-translate-x-full" : "lg:translate-x-0"
         }`}
         style={{ willChange: "transform" }}
@@ -221,7 +289,6 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                 </div>
               )}
 
-              {/* FORM PENGISIAN DULU */}
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 {/* Input Email */}
                 <div>
@@ -229,14 +296,14 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                     Alamat Email
                   </label>
                   <div className="relative">
-                    <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                    <Mail className={ICON_LEFT} />
                     <input
                       type="email"
                       required
                       value={loginEmail}
                       onChange={(e) => setLoginEmail(e.target.value)}
                       placeholder="nama@email.com"
-                      className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111d5e] focus:border-transparent transition-all"
+                      className={`${INPUT_BASE} pl-10 pr-4`}
                     />
                   </div>
                 </div>
@@ -252,22 +319,19 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                     </span>
                   </div>
                   <div className="relative">
-                    <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                    <Lock className={ICON_LEFT} />
                     <input
                       type={showLoginPassword ? "text" : "password"}
                       required
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full pl-10 pr-10 py-2.5 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111d5e] focus:border-transparent transition-all"
+                      className={`${INPUT_BASE} pl-10 pr-10`}
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowLoginPassword(!showLoginPassword)}
-                      className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 transition-colors"
-                    >
-                      {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                    <PasswordToggle
+                      show={showLoginPassword}
+                      onToggle={() => setShowLoginPassword(!showLoginPassword)}
+                    />
                   </div>
                 </div>
 
@@ -301,10 +365,10 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                 </button>
               </form>
 
-              {/* DI BAWAHNYA BARU GOOGLE ATAU FB */}
+              {/* Divider sosial */}
               <div className="relative flex items-center justify-center pt-5 pb-3">
                 <div className="border-t border-gray-200 w-full" />
-                <span className="bg-white px-3 text-xs text-gray-400 font-medium shrink-0">
+                <span className="bg-white px-3 text-xs text-gray-400 font-medium shrink-0 absolute top-1/2 mt-1 -translate-y-1/2">
                   atau masuk dengan
                 </span>
               </div>
@@ -336,7 +400,7 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                 </button>
               </div>
 
-              {/* DI BAWAHNYA LAGI PINDAH KE HALAMAN REGISTER */}
+              {/* Pindah ke register */}
               <div className="text-center text-xs sm:text-sm text-gray-500 pt-5">
                 Belum memiliki akun?{" "}
                 <button
@@ -386,22 +450,21 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                 </div>
               )}
 
-              {/* FORM PENGISIAN DULU */}
-              <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
+              <form onSubmit={handleRegisterSubmit} className="space-y-4">
                 {/* Nama Lengkap */}
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5">
                     Nama Lengkap
                   </label>
                   <div className="relative">
-                    <User className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                    <User className={ICON_LEFT} />
                     <input
                       type="text"
                       required
                       value={regName}
                       onChange={(e) => setRegName(e.target.value)}
                       placeholder="Nama lengkap kamu"
-                      className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111d5e] focus:border-transparent transition-all"
+                      className={`${INPUT_BASE} pl-10 pr-4`}
                     />
                   </div>
                 </div>
@@ -409,34 +472,34 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                 {/* Email & No HP Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5">
                       Alamat Email
                     </label>
                     <div className="relative">
-                      <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                      <Mail className={ICON_LEFT} />
                       <input
                         type="email"
                         required
                         value={regEmail}
                         onChange={(e) => setRegEmail(e.target.value)}
                         placeholder="nama@email.com"
-                        className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111d5e] focus:border-transparent transition-all"
+                        className={`${INPUT_BASE} pl-10 pr-4`}
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5">
                       Nomor HP <span className="text-gray-400 font-normal">(Opsional)</span>
                     </label>
                     <div className="relative">
-                      <Phone className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                      <Phone className={ICON_LEFT} />
                       <input
                         type="tel"
                         value={regPhone}
                         onChange={(e) => setRegPhone(e.target.value)}
                         placeholder="08xxxxxxxxxx"
-                        className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111d5e] focus:border-transparent transition-all"
+                        className={`${INPUT_BASE} pl-10 pr-4`}
                       />
                     </div>
                   </div>
@@ -445,11 +508,11 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                 {/* Password & Confirm Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5">
                       Kata Sandi
                     </label>
                     <div className="relative">
-                      <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                      <Lock className={ICON_LEFT} />
                       <input
                         type={showRegPassword ? "text" : "password"}
                         required
@@ -457,24 +520,21 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                         value={regPassword}
                         onChange={(e) => setRegPassword(e.target.value)}
                         placeholder="Min. 6 karakter"
-                        className="w-full pl-10 pr-9 py-2 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111d5e] focus:border-transparent transition-all"
+                        className={`${INPUT_BASE} pl-10 pr-10`}
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowRegPassword(!showRegPassword)}
-                        className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600 transition-colors"
-                      >
-                        {showRegPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
+                      <PasswordToggle
+                        show={showRegPassword}
+                        onToggle={() => setShowRegPassword(!showRegPassword)}
+                      />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                    <label className="block text-xs font-bold text-gray-700 mb-1.5">
                       Konfirmasi Sandi
                     </label>
                     <div className="relative">
-                      <Lock className="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5 pointer-events-none" />
+                      <Lock className={ICON_LEFT} />
                       <input
                         type={showRegConfirm ? "text" : "password"}
                         required
@@ -482,15 +542,12 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                         value={regConfirm}
                         onChange={(e) => setRegConfirm(e.target.value)}
                         placeholder="Ulangi sandi"
-                        className="w-full pl-10 pr-9 py-2 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111d5e] focus:border-transparent transition-all"
+                        className={`${INPUT_BASE} pl-10 pr-10`}
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowRegConfirm(!showRegConfirm)}
-                        className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600 transition-colors"
-                      >
-                        {showRegConfirm ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
+                      <PasswordToggle
+                        show={showRegConfirm}
+                        onToggle={() => setShowRegConfirm(!showRegConfirm)}
+                      />
                     </div>
                   </div>
                 </div>
@@ -535,10 +592,10 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                 </button>
               </form>
 
-              {/* DI BAWAHNYA BARU GOOGLE ATAU FB */}
-              <div className="relative flex items-center justify-center pt-4 pb-2.5">
+              {/* Divider sosial */}
+              <div className="relative flex items-center justify-center pt-5 pb-3">
                 <div className="border-t border-gray-200 w-full" />
-                <span className="bg-white px-3 text-xs text-gray-400 font-medium shrink-0">
+                <span className="bg-white px-3 text-xs text-gray-400 font-medium shrink-0 absolute top-1/2 mt-1 -translate-y-1/2">
                   atau daftar dengan
                 </span>
               </div>
@@ -570,8 +627,8 @@ export default function AuthSlider({ initialMode = "login" }: AuthSliderProps) {
                 </button>
               </div>
 
-              {/* DI BAWAHNYA LAGI PINDAH KE HALAMAN LOGIN */}
-              <div className="text-center text-xs sm:text-sm text-gray-500 pt-4">
+              {/* Pindah ke login */}
+              <div className="text-center text-xs sm:text-sm text-gray-500 pt-5">
                 Sudah memiliki akun?{" "}
                 <button
                   type="button"

@@ -6,6 +6,7 @@ import Script from "next/script";
 import { useRouter, useSearchParams } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
+import TicketCard from "@/components/tickets/TicketCard"; // sesuaikan path jika berbeda
 import { getEventById, type Event } from "@/services/eventService";
 import { getTicketCategories, type TicketCategory } from "@/services/ticketService";
 import {
@@ -28,7 +29,6 @@ import {
   User,
   Mail,
   Phone,
-  Sparkles,
   AlertCircle,
   CreditCard,
   Plus,
@@ -40,9 +40,10 @@ import {
   Users,
   RefreshCw,
   Lock,
-  ExternalLink,
   ChevronRight,
-  Check
+  Check,
+  X,
+  Eye
 } from "lucide-react";
 
 declare global {
@@ -88,6 +89,9 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
   const [verifyingPayment, setVerifyingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
 
+  // Pratinjau cetak E-Ticket
+  const [showPreview, setShowPreview] = useState(false);
+
   // Load Event and Categories
   useEffect(() => {
     fetchInitialData();
@@ -101,6 +105,24 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
       if (!buyerPhone) setBuyerPhone(user.phone || "");
     }
   }, [user]);
+
+  // Pratinjau: kunci scroll halaman & tutup dengan tombol Esc
+  useEffect(() => {
+    if (!showPreview) return;
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowPreview(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showPreview]);
 
   const fetchInitialData = async () => {
     try {
@@ -414,10 +436,25 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
     }
   };
 
-  // --- STEP 4 LOGIC: Print / Download E-Ticket ---
+  // --- STEP 4 LOGIC: Pratinjau & Cetak / Unduh E-Ticket ---
+  const handleOpenPreview = () => setShowPreview(true);
+  const handleClosePreview = () => setShowPreview(false);
+
+  // Cetak / simpan PDF: tetap memakai dialog cetak bawaan browser
   const handlePrintTickets = () => {
     window.print();
   };
+
+  // Data tiket untuk TicketCard (dipakai di daftar E-Ticket dan di pratinjau)
+  const buildCardTicket = (tkt: any) => ({
+    ...tkt,
+    event_name: tkt.event_name || event?.name,
+    event_date: tkt.event_date || event?.event_date,
+    venue: tkt.venue || event?.venue || event?.city,
+    ticket_category: tkt.ticket_category || tkt.category_name,
+    owner_name: tkt.owner_name || order?.buyer_name || buyerName,
+    status: tkt.status || "active"
+  });
 
   if (loading) {
     return (
@@ -456,6 +493,14 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f8fafc] text-gray-900 font-sans selection:bg-blue-100 selection:text-blue-900">
+      {/* Saat dicetak, hanya E-Ticket yang tampil (navbar & footer disembunyikan) */}
+      <style>{`
+        @media print {
+          header, nav, footer { display: none !important; }
+          body { background: #fff !important; }
+        }
+      `}</style>
+
       <Navbar />
 
       {/* Script Midtrans Snap Sandbox */}
@@ -465,12 +510,17 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
         strategy="lazyOnload"
       />
 
-      <main className="flex-1 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+      {/* Saat pratinjau terbuka, isi halaman disembunyikan dari hasil cetak */}
+      <main
+        className={`flex-1 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full ${
+          showPreview ? "print:hidden" : ""
+        }`}
+      >
         {/* ============================================================== */}
         {/* 1. HEADER INFORMASI EVENT (Banner, Judul, Tanggal, Venue)       */}
         {/* ============================================================== */}
         {event && (
-          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-gray-200/80 shadow-sm mb-6 flex flex-col md:flex-row gap-6 items-start md:items-center">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-gray-200/80 shadow-sm mb-6 flex flex-col md:flex-row gap-6 items-start md:items-center print:hidden">
             {/* Event Poster Thumbnail */}
             <div className="w-full md:w-44 h-40 md:h-28 rounded-2xl overflow-hidden bg-gray-100 shrink-0 relative border border-gray-100">
               <img
@@ -590,7 +640,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
 
         {/* Error Alert Global */}
         {error && (
-          <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-3">
+          <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-3 print:hidden">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
@@ -729,7 +779,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
                 type="button"
                 onClick={handleProceedToStep2}
                 disabled={totalPackages === 0}
-                className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold text-xs sm:text-sm bg-[#111d5e] hover:bg-[#0c1543] active:scale-98 text-white shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                className="w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold text-xs sm:text-sm bg-[#111d5e] hover:bg-[#0c1543] text-white shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
               >
                 <span>Lanjutkan ke Data Pemesan</span>
                 <ChevronRight className="w-4 h-4" />
@@ -1010,16 +1060,16 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
                   Metode Pembayaran Tersedia (Midtrans Sandbox):
                 </span>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[11px] font-bold text-gray-700">
-                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-2xs">
+                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-sm">
                     QRIS Instan
                   </div>
-                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-2xs">
+                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-sm">
                     BCA / Mandiri VA
                   </div>
-                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-2xs">
+                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-sm">
                     BNI / BRI VA
                   </div>
-                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-2xs">
+                  <div className="p-2.5 rounded-xl bg-white border border-gray-200 shadow-sm">
                     Kartu Kredit Demo
                   </div>
                 </div>
@@ -1033,7 +1083,7 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
                 <button
                   type="button"
                   onClick={handleOpenMidtransSnap}
-                  className="w-full py-4 rounded-2xl font-black text-sm bg-[#111d5e] hover:bg-[#0c1543] active:scale-98 text-white shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  className="w-full py-4 rounded-2xl font-black text-sm bg-[#111d5e] hover:bg-[#0c1543] text-white shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
                   <Lock className="w-4 h-4" />
                   <span>Buka Pembayaran Midtrans Snap</span>
@@ -1072,168 +1122,92 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
         )}
 
         {/* ============================================================== */}
-        {/* STEP 4: HASIL TRANSAKSI DAN E-TICKET (Physical Pass Style)      */}
+        {/* STEP 4: HASIL TRANSAKSI DAN E-TICKET                            */}
         {/* ============================================================== */}
         {currentStep === 4 && (
           <div className="space-y-8">
             {/* Success Confirmation Banner */}
-            <div className="bg-white rounded-3xl p-6 sm:p-8 border border-emerald-200/90 shadow-sm text-center space-y-3 print:hidden">
-              <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-inner">
+            <div className="bg-white rounded-3xl border border-gray-200 shadow-sm px-6 py-8 sm:px-10 sm:py-10 text-center print:hidden">
+              <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
 
-              <div className="space-y-1">
-                <span className="text-[11px] font-black uppercase tracking-widest text-emerald-700">
-                  Pembayaran Terverifikasi
-                </span>
-                <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">
-                  Transaksi Berhasil! E-Ticket Siap
-                </h2>
-                <p className="text-xs text-gray-500 max-w-md mx-auto">
-                  Terima kasih, <strong>{order?.buyer_name || buyerName}</strong>. E-Ticket resmi kamu telah berhasil diterbitkan oleh sistem TixGoo.
-                </p>
-              </div>
+              <p className="mt-5 text-sm font-semibold text-emerald-700">Pembayaran Terverifikasi</p>
+              <h2 className="mt-1 text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight">
+                Transaksi Berhasil! E-Ticket Siap
+              </h2>
+              <p className="mt-3 text-sm text-gray-500 max-w-md mx-auto leading-relaxed">
+                Terima kasih, <strong className="text-gray-800">{order?.buyer_name || buyerName}</strong>. E-Ticket resmi kamu telah berhasil diterbitkan oleh sistem TixGoo.
+              </p>
 
-              {/* Transaction Summary Chips */}
-              <div className="flex flex-wrap items-center justify-center gap-3 pt-2 text-xs">
-                <div className="px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-700">
-                  Invoice: <strong>{order?.invoice_code || "INV-CONFIRMED"}</strong>
+              {/* Ringkasan transaksi: informasi, dipisah garis tipis */}
+              <dl className="mt-8 mx-auto max-w-2xl grid grid-cols-1 sm:grid-cols-3 gap-y-5 text-center">
+                <div className="sm:px-4 sm:border-l sm:first:border-l-0 border-gray-200">
+                  <dt className="text-xs text-gray-500">Invoice</dt>
+                  <dd className="mt-1 text-sm font-semibold text-gray-900 break-all">
+                    {order?.invoice_code || "INV-CONFIRMED"}
+                  </dd>
                 </div>
-                <div className="px-3 py-1.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-700">
-                  Total: <strong>{formatRupiah(order?.total || grandTotal)}</strong>
+                <div className="sm:px-4 sm:border-l sm:first:border-l-0 border-gray-200">
+                  <dt className="text-xs text-gray-500">Total</dt>
+                  <dd className="mt-1 text-sm font-semibold text-gray-900 tabular-nums">
+                    {formatRupiah(order?.total || grandTotal)}
+                  </dd>
                 </div>
-                <div className="px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold">
-                  Status: LUNAS / SETTLEMENT
+                <div className="sm:px-4 sm:border-l sm:first:border-l-0 border-gray-200">
+                  <dt className="text-xs text-gray-500">Status</dt>
+                  <dd className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    Lunas
+                  </dd>
                 </div>
-              </div>
+              </dl>
 
-              {/* Action Buttons for Step 4 */}
-              <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
+              {/* Aksi */}
+              <div className="mt-8 flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3">
                 <button
                   type="button"
-                  onClick={handlePrintTickets}
-                  className="px-5 py-2.5 rounded-xl bg-[#111d5e] hover:bg-[#0c1543] text-white font-bold text-xs shadow-md flex items-center gap-2 transition-all cursor-pointer"
+                  onClick={handleOpenPreview}
+                  className="inline-flex items-center justify-center gap-2 h-11 px-6 sm:w-72 rounded-xl bg-[#111d5e] hover:bg-[#0c1543] text-white text-sm font-semibold shadow-sm transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111d5e] focus-visible:ring-offset-2"
                 >
-                  <Printer className="w-4 h-4" /> Cetak / Unduh E-Ticket (PDF)
+                  <Printer className="w-4 h-4" /> Cetak / Unduh Detail Invoice
                 </button>
 
                 <Link
                   href="/tickets"
-                  className="px-5 py-2.5 rounded-xl border border-gray-300 hover:bg-gray-50 text-gray-700 font-bold text-xs flex items-center gap-2 transition-all"
+                  className="inline-flex items-center justify-center gap-2 h-11 px-6 sm:w-72 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-sm font-semibold transition-colors"
                 >
                   <Ticket className="w-4 h-4" /> Lihat di Tiket Saya
                 </Link>
-
-                <Link
-                  href="/"
-                  className="px-5 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-all"
-                >
-                  Kembali ke Beranda
-                </Link>
               </div>
+
+              <Link
+                href="/"
+                className="mt-5 inline-block text-sm font-medium text-gray-500 hover:text-[#111d5e] hover:underline underline-offset-4 transition-colors"
+              >
+                Kembali ke Beranda
+              </Link>
             </div>
 
-            {/* E-TICKETS DIGITAL REALISTIS (Concert Pass Style) */}
-            <div className="space-y-6">
+            {/* E-TICKETS: memakai TicketCard yang sama dengan halaman Tiket Saya */}
+            <div className="space-y-5">
               <div className="flex items-center justify-between print:hidden">
                 <h3 className="text-lg font-black text-gray-900 tracking-tight flex items-center gap-2">
                   <Ticket className="w-5 h-5 text-[#111d5e]" />
                   Daftar E-Ticket Konser Resmi ({issuedTickets.length} Tiket)
                 </h3>
-                <span className="text-xs text-gray-500 font-medium">
+                <span className="text-xs text-gray-500 font-medium hidden sm:block">
                   Tunjukkan QR Code berikut ke petugas pintu masuk konser.
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {issuedTickets.map((tkt, idx) => (
-                  <div
+              <div className="grid grid-cols-1 gap-5 print:gap-4">
+                {issuedTickets.map((tkt: any, idx) => (
+                  <TicketCard
                     key={tkt.id || idx}
-                    className="bg-white rounded-3xl border border-gray-200/90 shadow-lg overflow-hidden flex flex-col justify-between relative group hover:shadow-xl transition-shadow"
-                  >
-                    {/* Top Concert Pass Header */}
-                    <div className="bg-[#111d5e] text-white p-5 space-y-2 relative overflow-hidden">
-                      <div className="flex items-center justify-between relative z-10">
-                        <span className="text-xs font-black tracking-widest text-blue-300 uppercase">
-                          ✦ TixGoo Official Pass
-                        </span>
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500 text-white">
-                          VALID / ACTIVE
-                        </span>
-                      </div>
-
-                      <h4 className="text-lg font-black text-white tracking-tight leading-snug relative z-10">
-                        {event?.name}
-                      </h4>
-
-                      <div className="flex items-center gap-4 text-[11px] text-gray-200 relative z-10">
-                        <span>{formatDate(event?.event_date)}</span>
-                        <span>·</span>
-                        <span>{event?.venue || event?.city}</span>
-                      </div>
-
-                      {/* Subtle watermark badge */}
-                      <div className="absolute -bottom-6 -right-6 w-24 h-24 rounded-full bg-white/5 pointer-events-none" />
-                    </div>
-
-                    {/* Ticket Body & QR Code Pass */}
-                    <div className="p-6 flex flex-col sm:flex-row items-center gap-6 justify-between">
-                      {/* Ticket Holder Info */}
-                      <div className="space-y-3 flex-1 text-left w-full sm:w-auto">
-                        <div>
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                            Nama Pemilik Tiket
-                          </span>
-                          <span className="text-sm font-black text-gray-900 block">
-                            {tkt.owner_name || order?.buyer_name || buyerName}
-                          </span>
-                        </div>
-
-                        <div>
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                            Kategori Tiket
-                          </span>
-                          <span className="text-xs font-extrabold text-[#111d5e] block">
-                            {tkt.ticket_category || tkt.category_name || "General Pass"}
-                          </span>
-                        </div>
-
-                        <div>
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                            Kode Tiket Unik
-                          </span>
-                          <span className="text-xs font-mono font-bold tracking-widest text-gray-800 bg-gray-100 px-2.5 py-1 rounded-lg inline-block">
-                            {tkt.ticket_code}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Unique QR Code Stamp */}
-                      <div className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl border border-gray-200 shadow-sm shrink-0">
-                        {tkt.qr_code && tkt.qr_code.startsWith("data:image") ? (
-                          <img
-                            src={tkt.qr_code}
-                            alt={`QR ${tkt.ticket_code}`}
-                            className="w-32 h-32 object-contain"
-                          />
-                        ) : (
-                          <div className="w-32 h-32 bg-gray-100 rounded-xl flex items-center justify-center text-gray-400">
-                            <Ticket className="w-8 h-8" />
-                          </div>
-                        )}
-                        <span className="text-[9px] font-mono text-gray-400 mt-1 uppercase">
-                          Scan di Venue
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Bottom Security Perforation Barcode Line */}
-                    <div className="px-6 py-2.5 bg-gray-50 border-t border-dashed border-gray-200 flex items-center justify-between text-[10px] text-gray-400 font-mono">
-                      <span>#TIKET-{idx + 1}</span>
-                      <span>SECURE QR VALIDATION</span>
-                      <span>TIXGOO ECOSYSTEM</span>
-                    </div>
-                  </div>
+                    ticket={buildCardTicket(tkt)}
+                    buyerName={order?.buyer_name || buyerName}
+                  />
                 ))}
               </div>
             </div>
@@ -1242,6 +1216,173 @@ export default function CheckoutPage({ params }: { params: Promise<{ id: string 
       </main>
 
       <Footer />
+
+      {/* ============================================================== */}
+      {/* PRATINJAU CETAK / UNDUH E-TICKET                                */}
+      {/* Layar: modal dengan lembar kertas. Cetak: hanya lembar kertas.  */}
+      {/* ============================================================== */}
+      {showPreview && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Pratinjau E-Ticket"
+          className="fixed inset-0 z-[100] flex flex-col bg-slate-900/70 backdrop-blur-sm print:static print:block print:bg-white print:backdrop-blur-none"
+        >
+          {/* Toolbar (tidak ikut tercetak) */}
+          <div className="shrink-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 print:hidden">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 text-[#111d5e] flex items-center justify-center shrink-0">
+                <Eye className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-sm sm:text-base font-extrabold text-gray-900 leading-tight">
+                  Pratinjau E-Ticket
+                </h2>
+                <p className="text-[11px] sm:text-xs text-gray-500 truncate">
+                  {issuedTickets.length} tiket · {order?.invoice_code || "INV-CONFIRMED"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleClosePreview}
+                className="inline-flex items-center justify-center gap-1.5 h-10 px-3 sm:px-4 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+                <span className="hidden sm:inline">Tutup</span>
+              </button>
+              <button
+                type="button"
+                onClick={handlePrintTickets}
+                className="inline-flex items-center justify-center gap-2 h-10 px-4 sm:px-5 rounded-xl bg-[#111d5e] hover:bg-[#0c1543] text-white text-xs sm:text-sm font-semibold shadow-sm transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111d5e] focus-visible:ring-offset-2"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Cetak / Unduh PDF</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Area scroll pratinjau */}
+          <div
+            className="flex-1 overflow-y-auto px-3 sm:px-6 py-6 sm:py-10 print:overflow-visible print:p-0"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) handleClosePreview();
+            }}
+          >
+            {/* Lembar kertas */}
+            <div
+              id="eticket-print-area"
+              className="mx-auto w-full max-w-3xl bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 p-5 sm:p-10 print:max-w-none print:rounded-none print:shadow-none print:ring-0 print:p-0"
+            >
+              {/* Kop: logo + judul dokumen */}
+              <div className="flex items-center justify-between gap-4 pb-5 border-b border-gray-200">
+                <img
+                  src="/logo-tix.png"
+                  alt="TixGoo"
+                  className="h-8 sm:h-9 w-auto object-contain"
+                />
+                <div className="text-right">
+                  <p className="text-sm sm:text-base font-extrabold text-gray-900 leading-tight">
+                    E-Ticket Resmi
+                  </p>
+                  <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5">
+                    {issuedTickets.length} tiket
+                  </p>
+                </div>
+              </div>
+
+              {/* Informasi event */}
+              {event && (
+                <div className="py-5 sm:py-6">
+                  <h3 className="text-lg sm:text-2xl font-black text-gray-900 tracking-tight leading-snug">
+                    {event.name}
+                  </h3>
+
+                  <dl className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-0">
+                    <div className="sm:pr-4">
+                      <dt className="text-[11px] text-gray-500 flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-blue-600" /> Tanggal
+                      </dt>
+                      <dd className="mt-1 text-sm font-semibold text-gray-900">
+                        {formatDate(event.event_date)}
+                      </dd>
+                    </div>
+                    <div className="sm:px-4 sm:border-l sm:border-gray-200">
+                      <dt className="text-[11px] text-gray-500 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-blue-600" /> Waktu
+                      </dt>
+                      <dd className="mt-1 text-sm font-semibold text-gray-900">
+                        {event.event_time ? `${event.event_time.slice(0, 5)} WIB` : "19:00 WIB"}
+                      </dd>
+                    </div>
+                    <div className="sm:pl-4 sm:border-l sm:border-gray-200">
+                      <dt className="text-[11px] text-gray-500 flex items-center gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-rose-500" /> Lokasi
+                      </dt>
+                      <dd className="mt-1 text-sm font-semibold text-gray-900">
+                        {event.venue || event.city}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              )}
+
+              {/* Ringkasan pesanan */}
+              <div className="rounded-xl bg-gray-50 border border-gray-200 px-4 py-4 sm:px-5">
+                <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-4">
+                  <div>
+                    <dt className="text-[11px] text-gray-500">Invoice</dt>
+                    <dd className="mt-0.5 text-xs sm:text-sm font-semibold text-gray-900 break-all">
+                      {order?.invoice_code || "INV-CONFIRMED"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] text-gray-500">Pemesan</dt>
+                    <dd className="mt-0.5 text-xs sm:text-sm font-semibold text-gray-900 break-words">
+                      {order?.buyer_name || buyerName}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] text-gray-500">Total</dt>
+                    <dd className="mt-0.5 text-xs sm:text-sm font-semibold text-gray-900 tabular-nums">
+                      {formatRupiah(order?.total || grandTotal)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[11px] text-gray-500">Status</dt>
+                    <dd className="mt-0.5 inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-emerald-700">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      Lunas
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+
+              {/* Daftar tiket: satu tiket per baris, tidak terpotong antar halaman */}
+              <div className="mt-6 sm:mt-8 space-y-5 print:space-y-4">
+                {issuedTickets.map((tkt: any, idx) => (
+                  <div key={tkt.id || idx} className="break-inside-avoid">
+                    <TicketCard
+                      ticket={buildCardTicket(tkt)}
+                      buyerName={order?.buyer_name || buyerName}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Catatan kaki */}
+              <div className="mt-6 sm:mt-8 pt-4 border-t border-gray-200 text-center">
+                <p className="text-[11px] sm:text-xs text-gray-500 leading-relaxed">
+                  Tunjukkan QR Code pada setiap tiket kepada petugas di pintu masuk.
+                  Satu QR Code hanya berlaku untuk satu kali masuk.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

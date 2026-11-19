@@ -18,12 +18,24 @@ import { getTicketCategories, createTicketCategory, updateTicketCategory, delete
 import { formatDate, formatRupiah, getStatusLabel } from "@/lib/utils";
 import type { User as AuthUser } from "@/lib/auth";
 import {
+  getAllStaffAssignments,
+  getAllPetugasUsers,
+  createStaffAccount,
+  assignStaff,
+  updateStaffPermissions,
+  toggleStaffStatus,
+  removeStaff,
+  type StaffAssignment,
+  type PetugasUser,
+} from "@/services/staffService";
+import {
   LayoutDashboard, CalendarDays, Users, Package, Receipt, ImageIcon, LogOut, Wallet,
   Plus, Trash2, Pencil, Menu, X, Upload, Link as LinkIcon, Check, Ticket,
+  UserCheck, Shield, ShieldCheck, KeyRound, CheckSquare, Square, Search, Filter,
   ChevronLeft, ChevronRight,
 } from "lucide-react";
 
-type AdminTab = "overview" | "events" | "banners" | "packages" | "users" | "orders";
+type AdminTab = "overview" | "events" | "staff" | "banners" | "packages" | "users" | "orders";
 
 const PAGE_SIZE = 5;
 
@@ -64,6 +76,7 @@ const DOT: Record<string, string> = {
 const TAB_DESC: Record<AdminTab, string> = {
   overview: "Gambaran singkat performa penjualan dan aktivitas platform.",
   events: "Buat, publikasikan, dan atur tiket untuk setiap event.",
+  staff: "Kelola akun petugas, penugasan ke event, hak akses, dan status keaktifan.",
   banners: "Atur banner yang tampil di beranda.",
   packages: "Paket yang ditawarkan kepada event organizer.",
   users: "Daftar akun yang terdaftar di TixGoo.",
@@ -107,12 +120,11 @@ function Pagination({
   return (
     <nav
       aria-label="Navigasi halaman"
-      className={`flex items-center justify-between gap-3 ${
-        inCard ? "px-5 py-3 border-t border-gray-100" : "pt-1"
-      }`}
+      className={`flex items-center justify-between gap-3 ${inCard ? "px-5 py-3 border-t border-gray-100" : "pt-1"
+        }`}
     >
       <p className="text-sm text-gray-500">
-        Menampilkan <span className="font-medium text-gray-700">{from}–{to}</span> dari{" "}
+        Menampilkan <span className="font-medium text-gray-700">{from}ΓÇô{to}</span> dari{" "}
         <span className="font-medium text-gray-700">{total}</span>
       </p>
 
@@ -284,6 +296,32 @@ export default function AdminPage() {
   const [showPackageForm, setShowPackageForm] = useState(false);
   const [packageForm, setPackageForm] = useState<Partial<CooperationPackage>>({});
 
+  // Staff Management State
+  const [staffAssignments, setStaffAssignments] = useState<StaffAssignment[]>([]);
+  const [petugasUsers, setPetugasUsers] = useState<PetugasUser[]>([]);
+  const [staffSubTab, setStaffSubTab] = useState<"assignments" | "users">("assignments");
+  const [staffFilterEvent, setStaffFilterEvent] = useState<string>("");
+  const [staffSearchQuery, setStaffSearchQuery] = useState<string>("");
+
+  // Modal: Buat Akun Petugas
+  const [showCreateStaffModal, setShowCreateStaffModal] = useState(false);
+  const [staffAccountForm, setStaffAccountForm] = useState({ name: "", email: "", phone: "", password: "" });
+  const [staffAccountLoading, setStaffAccountLoading] = useState(false);
+
+  // Modal: Penugasan Staff ke Event
+  const [showAssignStaffModal, setShowAssignStaffModal] = useState(false);
+  const [assignForm, setAssignForm] = useState<{ event_id: string; user_id: string; permissions: string[] }>({
+    event_id: "",
+    user_id: "",
+    permissions: ["checkin"],
+  });
+  const [assignLoading, setAssignLoading] = useState(false);
+
+  // Modal: Edit Permissions
+  const [editingAssignment, setEditingAssignment] = useState<StaffAssignment | null>(null);
+  const [editPermissions, setEditPermissions] = useState<string[]>([]);
+  const [editLoading, setEditLoading] = useState(false);
+
   // Pagination: 5 data per halaman untuk setiap list
   const eventPg = usePagination(events);
   const ticketPg = usePagination(ticketCategories);
@@ -291,7 +329,6 @@ export default function AdminPage() {
   const packagePg = usePagination(packages);
   const userPg = usePagination(users);
   const orderPg = usePagination(orders);
-
   useEffect(() => {
     if (!authLoading && (!isAuthenticated || role !== "admin")) router.push("/login");
   }, [authLoading, isAuthenticated, role]);
@@ -310,11 +347,12 @@ export default function AdminPage() {
     resetTicketPage(1);
   }, [selectedEventForTickets]);
 
-  const fetchAll = async () => {
+  const fetchAll = async (): Promise<boolean> => {
     try {
       setLoading(true);
-      const [dashRes, evtRes, banRes, pkgRes, orgRes, usrRes, ordRes] = await Promise.allSettled([
+      const [dashRes, evtRes, banRes, pkgRes, orgRes, usrRes, ordRes, staffRes, petugasRes] = await Promise.allSettled([
         getAdminDashboard(), getEvents(), getBanners(), getPackages(), getOrganizers(), getUsers(), getAllOrders(),
+        getAllStaffAssignments(), getAllPetugasUsers(),
       ]);
       if (dashRes.status === "fulfilled") setDashboard(dashRes.value as any);
       if (evtRes.status === "fulfilled") setEvents(Array.isArray(evtRes.value) ? evtRes.value : []);
@@ -323,8 +361,16 @@ export default function AdminPage() {
       if (orgRes.status === "fulfilled") setOrganizers(Array.isArray(orgRes.value) ? orgRes.value : []);
       if (usrRes.status === "fulfilled") setUsers(Array.isArray(usrRes.value) ? usrRes.value : []);
       if (ordRes.status === "fulfilled") setOrders(Array.isArray(ordRes.value) ? ordRes.value : []);
+      if (staffRes.status === "fulfilled") setStaffAssignments(Array.isArray(staffRes.value) ? staffRes.value : []);
+      if (petugasRes.status === "fulfilled") setPetugasUsers(Array.isArray(petugasRes.value) ? petugasRes.value : []);
+
+      if (petugasRes.status === "rejected" || staffRes.status === "rejected") {
+        return false;
+      }
+      return true;
     } catch {
       setError("Gagal memuat data dashboard");
+      return false;
     } finally {
       setLoading(false);
     }
@@ -467,12 +513,120 @@ export default function AdminPage() {
   const handleDeleteUser = (id: string) =>
     confirm("Hapus pengguna ini?") && run(() => deleteUser(id), "Pengguna dihapus", fetchAll);
 
+  // --- Staff Management Handlers ---
+  const handleCreateStaffAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staffAccountForm.name || !staffAccountForm.email || !staffAccountForm.password) {
+      setError("Nama, email, dan password wajib diisi");
+      return;
+    }
+    setStaffAccountLoading(true);
+    try {
+      const createdUser = await createStaffAccount(staffAccountForm);
+      const refetched = await fetchAll();
+      if (!refetched) {
+        setError("Akun petugas berhasil dibuat, tetapi sinkronisasi data gagal. Silakan refresh halaman.");
+        return;
+      }
+      showSuccess(
+        `Akun petugas "${createdUser?.name || staffAccountForm.name}" berhasil dibuat!`
+      );
+      setShowCreateStaffModal(false);
+      setStaffAccountForm({ name: "", email: "", phone: "", password: "" });
+      setStaffSubTab("users");
+    } catch (err: any) {
+      setError(err.message || "Gagal membuat akun petugas");
+    } finally {
+      setStaffAccountLoading(false);
+    }
+  };
+
+  const handleAssignStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignForm.event_id || !assignForm.user_id) {
+      setError("Pilih event dan akun petugas terlebih dahulu");
+      return;
+    }
+    if (assignForm.permissions.length === 0) {
+      setError("Pilih minimal satu permission untuk petugas");
+      return;
+    }
+    setAssignLoading(true);
+    try {
+      await assignStaff(assignForm);
+      showSuccess("Petugas berhasil ditugaskan ke event");
+      setShowAssignStaffModal(false);
+      setAssignForm({ event_id: "", user_id: "", permissions: ["checkin"] });
+      await fetchAll();
+      setStaffSubTab("assignments");
+    } catch (err: any) {
+      setError(err.message || "Gagal menugaskan petugas");
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
+  const handleToggleStaffStatus = (assignment: StaffAssignment) => {
+    const assignmentId = assignment.id || (assignment as any).event_staff_id;
+    if (!assignmentId) {
+      setError("ID penugasan tidak valid");
+      return;
+    }
+    const nextStatus = !assignment.is_active;
+    run(
+      () => toggleStaffStatus(assignmentId, nextStatus),
+      `Status penugasan petugas diubah menjadi ${nextStatus ? "Aktif" : "Nonaktif"}`,
+      fetchAll
+    );
+  };
+
+  const handleOpenEditPermissions = (assignment: StaffAssignment) => {
+    setEditingAssignment(assignment);
+    setEditPermissions([...assignment.permissions]);
+  };
+
+  const handleSaveEditedPermissions = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAssignment) return;
+    const assignmentId = editingAssignment.id || (editingAssignment as any).event_staff_id;
+    if (!assignmentId) {
+      setError("ID penugasan tidak valid");
+      return;
+    }
+    if (editPermissions.length === 0) {
+      setError("Pilih minimal satu permission untuk petugas");
+      return;
+    }
+    setEditLoading(true);
+    try {
+      await updateStaffPermissions(assignmentId, editPermissions);
+      showSuccess("Permission petugas berhasil diperbarui");
+      setEditingAssignment(null);
+      await fetchAll();
+    } catch (err: any) {
+      setError(err.message || "Gagal memperbarui permissions petugas");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleRemoveStaffAssignment = (assignment: StaffAssignment) => {
+    const assignmentId = assignment.id || (assignment as any).event_staff_id;
+    if (!assignmentId) {
+      setError("ID penugasan tidak valid");
+      return;
+    }
+    if (confirm(`Hapus penugasan ${assignment.staff_name || "petugas"} dari event ${assignment.event_name || ""}?`)) {
+      run(() => removeStaff(assignmentId), "Penugasan petugas berhasil dihapus", fetchAll);
+    }
+  };
+
   if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f3f5fa]">
         <div className="flex items-center gap-3 text-sm text-gray-500">
           <div className="w-5 h-5 border-2 border-[#111d5e] border-t-transparent rounded-full animate-spin" />
-          Memuat dashboard…
+          Memuat dashboardΓÇª
         </div>
       </div>
     );
@@ -483,6 +637,7 @@ export default function AdminPage() {
   const navItems: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
     { id: "overview", label: "Ringkasan", icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: "events", label: "Event", icon: <CalendarDays className="w-4 h-4" /> },
+    { id: "staff", label: "Petugas event", icon: <UserCheck className="w-4 h-4" /> },
     { id: "banners", label: "Banner promo", icon: <ImageIcon className="w-4 h-4" /> },
     { id: "packages", label: "Paket kerja sama", icon: <Package className="w-4 h-4" /> },
     { id: "users", label: "Pengguna", icon: <Users className="w-4 h-4" /> },
@@ -550,9 +705,8 @@ export default function AdminPage() {
     <div className="min-h-screen flex bg-[#f3f5fa] text-gray-900">
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 flex flex-col bg-white border-r border-gray-200 transition-transform duration-200 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-        }`}
+        className={`fixed inset-y-0 left-0 z-40 w-64 flex flex-col bg-white border-r border-gray-200 transition-transform duration-200 ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+          }`}
       >
         <div className="h-16 px-5 flex items-center justify-between border-b border-gray-200 shrink-0">
           <Link href="/" className="flex items-center gap-2.5">
@@ -569,11 +723,10 @@ export default function AdminPage() {
             <button
               key={item.id}
               onClick={() => { setTab(item.id); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
-                tab === item.id
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-colors ${tab === item.id
                   ? "bg-[#111d5e]/[0.08] text-[#111d5e] font-semibold shadow-[inset_3px_0_0_#111d5e]"
                   : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-              }`}
+                }`}
             >
               {item.icon}
               {item.label}
@@ -800,7 +953,7 @@ export default function AdminPage() {
                 <section className={`${UI.card} p-6 space-y-4`}>
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <h3 className="text-base font-semibold text-gray-900">
-                      Kategori tiket · {events.find((e) => e.id === selectedEventForTickets)?.name}
+                      Kategori tiket ┬╖ {events.find((e) => e.id === selectedEventForTickets)?.name}
                     </h3>
                     <div className="flex gap-2">
                       <button
@@ -882,6 +1035,629 @@ export default function AdminPage() {
             </div>
           )}
 
+          {/* ===== STAFF MANAGEMENT ===== */}
+          {tab === "staff" && (
+            <div className="space-y-6">
+              <SectionBar
+                text={`${staffAssignments.length} penugasan event (${staffAssignments.filter((s) => s.is_active).length} aktif) ΓÇó ${petugasUsers.length} total akun petugas terdaftar`}
+                action={
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowCreateStaffModal(true)}
+                      className={UI.btnGhost}
+                    >
+                      <Users className="w-4 h-4 text-gray-600" />
+                      <span>+ Akun Petugas</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAssignForm({
+                          event_id: events[0]?.id || "",
+                          user_id: petugasUsers[0]?.id || "",
+                          permissions: ["checkin"],
+                        });
+                        setShowAssignStaffModal(true);
+                      }}
+                      className={UI.btn}
+                      disabled={events.length === 0 || petugasUsers.length === 0}
+                      title={petugasUsers.length === 0 ? "Buat akun petugas terlebih dahulu" : undefined}
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Tugaskan Petugas</span>
+                    </button>
+                  </div>
+                }
+              />
+
+              {/* Sub-tab Navigation: Penugasan Event vs Daftar Akun Petugas */}
+              <div className="flex items-center justify-between border-b border-gray-200 pb-2">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStaffSubTab("assignments")}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${staffSubTab === "assignments"
+                        ? "bg-[#111d5e] text-white shadow-sm"
+                        : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                      }`}
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Penugasan Event</span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${staffSubTab === "assignments" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700"
+                      }`}>
+                      {staffAssignments.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStaffSubTab("users")}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${staffSubTab === "users"
+                        ? "bg-[#111d5e] text-white shadow-sm"
+                        : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                      }`}
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>Daftar Akun Petugas</span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${staffSubTab === "users" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700"
+                      }`}>
+                      {petugasUsers.length}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Banner Info Petugas Belum Ditugaskan (jika sedang di tab Penugasan Event) */}
+              {staffSubTab === "assignments" && (() => {
+                const unassigned = petugasUsers.filter((p) => !p.total_assigned_events || p.total_assigned_events === 0);
+                if (unassigned.length === 0) return null;
+                return (
+                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-800">
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>
+                        Terdapat <strong>{unassigned.length} akun petugas terdaftar</strong> yang belum ditugaskan ke event mana pun ({unassigned.map(p => p.name).slice(0, 3).join(", ")}{unassigned.length > 3 ? "..." : ""}).
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setStaffSubTab("users")}
+                      className="font-bold text-amber-900 underline hover:text-amber-700 shrink-0"
+                    >
+                      Lihat Akun Petugas ΓåÆ
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {/* Filter & Search Bar */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-gray-200 shadow-sm">
+                <div className="flex items-center gap-2 flex-1 max-w-md">
+                  <div className="relative w-full">
+                    <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder={
+                        staffSubTab === "assignments"
+                          ? "Cari nama petugas, email, atau event..."
+                          : "Cari nama, email, atau no HP petugas..."
+                      }
+                      value={staffSearchQuery}
+                      onChange={(e) => setStaffSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:bg-white focus:border-[#111d5e]"
+                    />
+                  </div>
+                  {staffSearchQuery && (
+                    <button onClick={() => setStaffSearchQuery("")} className="text-xs text-gray-400 hover:text-gray-600">
+                      Reset
+                    </button>
+                  )}
+                </div>
+
+                {staffSubTab === "assignments" && (
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+                    <span className="text-xs text-gray-500 font-medium shrink-0">Filter Event:</span>
+                    <select
+                      value={staffFilterEvent}
+                      onChange={(e) => setStaffFilterEvent(e.target.value)}
+                      className="text-xs py-1.5 px-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 font-medium focus:outline-none focus:border-[#111d5e]"
+                    >
+                      <option value="">Semua Event ({events.length})</option>
+                      {events.map((evt) => (
+                        <option key={evt.id} value={evt.id}>
+                          {evt.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* TAMPILAN 1: PENUGASAN EVENT */}
+              {staffSubTab === "assignments" && (() => {
+                const filteredAssignments = staffAssignments.filter((a) => {
+                  const matchEvent = !staffFilterEvent || a.event_id === staffFilterEvent;
+                  const matchQuery =
+                    !staffSearchQuery ||
+                    (a.staff_name || "").toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
+                    (a.staff_email || "").toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
+                    (a.event_name || "").toLowerCase().includes(staffSearchQuery.toLowerCase());
+                  return matchEvent && matchQuery;
+                });
+
+                const head = [
+                  { label: "Petugas Lapangan" },
+                  { label: "Event yang Ditugaskan" },
+                  { label: "Izin Operasional (Permissions)" },
+                  { label: "Status Penugasan" },
+                  { label: "Aksi", align: "right" as const },
+                ];
+
+                return (
+                  <Table head={head}>
+                    {filteredAssignments.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-10 text-center text-sm text-gray-500">
+                          {staffAssignments.length === 0
+                            ? "Belum ada penugasan petugas ke event. Klik '+ Tugaskan Petugas' untuk memulai penugasan."
+                            : "Tidak ada data penugasan yang cocok dengan filter pencarian."}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredAssignments.map((assignment) => {
+                        const assignmentKey = assignment.event_staff_id || assignment.id;
+                        return (
+                          <tr key={assignmentKey} className="hover:bg-gray-50 transition-colors">
+                            <td className={UI.td}>
+                              <div className="flex flex-col">
+                                <span className="font-semibold text-gray-900">{assignment.staff_name || "Petugas"}</span>
+                                <span className="text-xs text-gray-500">{assignment.staff_email || "-"}</span>
+                              </div>
+                            </td>
+                            <td className={UI.td}>
+                              <span className="font-medium text-gray-800 bg-gray-100 px-2.5 py-1 rounded-md text-xs border border-gray-200">
+                                {assignment.event_name || "Event"}
+                              </span>
+                            </td>
+                            <td className={UI.td}>
+                              <div className="flex flex-wrap gap-1.5">
+                                {(!assignment.permissions || assignment.permissions.length === 0) && (
+                                  <span className="text-xs text-gray-400 italic">Tidak ada izin</span>
+                                )}
+                                {assignment.permissions?.includes("checkin") && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    Γ£ô Check-In
+                                  </span>
+                                )}
+                                {assignment.permissions?.includes("offline_sales") && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                                    Γ£ô Offline OTS
+                                  </span>
+                                )}
+                                {assignment.permissions?.includes("view_visitors") && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                                    Γ£ô Pengunjung
+                                  </span>
+                                )}
+                                {assignment.permissions?.includes("view_reports") && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                                    Γ£ô Laporan
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className={UI.td}>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleStaffStatus(assignment)}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${assignment.is_active
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                    : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
+                                  }`}
+                                title="Klik untuk mengubah status aktif/nonaktif"
+                              >
+                                <span
+                                  className={`w-2 h-2 rounded-full ${assignment.is_active ? "bg-emerald-500" : "bg-gray-400"
+                                    }`}
+                                />
+                                {assignment.is_active ? "Aktif" : "Nonaktif"}
+                              </button>
+                            </td>
+                            <td className={`${UI.td} text-right`}>
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditPermissions(assignment)}
+                                  className={UI.iconBtn}
+                                  title="Edit Hak Akses / Permissions"
+                                >
+                                  <Pencil className="w-4 h-4 text-gray-500 hover:text-blue-600" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveStaffAssignment(assignment)}
+                                  className={UI.iconBtnDanger}
+                                  title="Hapus Penugasan dari Event"
+                                >
+                                  <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-600" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </Table>
+                );
+              })()}
+
+              {/* TAMPILAN 2: DAFTAR AKUN PETUGAS */}
+              {staffSubTab === "users" && (() => {
+                const filteredPetugasUsers = petugasUsers.filter((p) => {
+                  if (!staffSearchQuery) return true;
+                  const q = staffSearchQuery.toLowerCase();
+                  return (
+                    (p.name || "").toLowerCase().includes(q) ||
+                    (p.email || "").toLowerCase().includes(q) ||
+                    (p.phone || "").toLowerCase().includes(q)
+                  );
+                });
+
+                return (
+                  <Table
+                    head={[
+                      { label: "Nama Petugas" },
+                      { label: "Email" },
+                      { label: "No. WhatsApp / HP" },
+                      { label: "Status Penugasan Event" },
+                      { label: "Terdaftar Pada" },
+                      { label: "Aksi", align: "right" as const },
+                    ]}
+                    empty="Belum ada akun petugas yang terdaftar. Klik '+ Akun Petugas' untuk membuat akun baru."
+                  >
+                    {filteredPetugasUsers.map((petugas) => (
+                      <tr key={petugas.id} className="hover:bg-gray-50 transition-colors">
+                        <td className={UI.td}>
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-700 text-xs font-bold flex items-center justify-center shrink-0">
+                              {petugas.name?.slice(0, 2).toUpperCase() || "PT"}
+                            </div>
+                            <span className="font-semibold text-gray-900">{petugas.name}</span>
+                          </div>
+                        </td>
+                        <td className={UI.td}>{petugas.email}</td>
+                        <td className={UI.td}>{petugas.phone || "-"}</td>
+                        <td className={UI.td}>
+                          {(petugas.total_assigned_events || 0) > 0 ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Γ£ô {petugas.total_assigned_events} Event Ditugaskan
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                              Belum Ditugaskan
+                            </span>
+                          )}
+                        </td>
+                        <td className={`${UI.td} text-xs text-gray-500`}>
+                          {petugas.created_at ? formatDate(petugas.created_at) : "-"}
+                        </td>
+                        <td className={`${UI.td} text-right`}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssignForm({
+                                event_id: events[0]?.id || "",
+                                user_id: petugas.id,
+                                permissions: ["checkin"],
+                              });
+                              setShowAssignStaffModal(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#111d5e] hover:bg-[#111d5e]/90 text-white transition-all shadow-sm"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Tugaskan ke Event</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </Table>
+                );
+              })()}
+
+              {/* Modal: Buat Akun Petugas Baru */}
+              {showCreateStaffModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                  <div className="w-full max-w-md bg-white rounded-2xl border border-gray-200 shadow-2xl p-6 space-y-5">
+                    <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                      <div className="flex items-center gap-2 text-[#111d5e]">
+                        <UserCheck className="w-5 h-5 text-emerald-600" />
+                        <h3 className="font-bold text-base text-gray-900">Buat Akun Petugas Baru</h3>
+                      </div>
+                      <button onClick={() => setShowCreateStaffModal(false)} className={UI.iconBtn}>
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleCreateStaffAccount} className="space-y-4">
+                      <Field label="Nama Lengkap Petugas *">
+                        <input
+                          type="text"
+                          required
+                          value={staffAccountForm.name}
+                          onChange={(e) => setStaffAccountForm({ ...staffAccountForm, name: e.target.value })}
+                          placeholder="Contoh: Ahmad Fadilah"
+                          className={UI.input}
+                        />
+                      </Field>
+
+                      <Field label="Email Petugas *">
+                        <input
+                          type="email"
+                          required
+                          value={staffAccountForm.email}
+                          onChange={(e) => setStaffAccountForm({ ...staffAccountForm, email: e.target.value })}
+                          placeholder="petugas@tixgoo.com"
+                          className={UI.input}
+                        />
+                      </Field>
+
+                      <Field label="Nomor WhatsApp / Telepon">
+                        <input
+                          type="tel"
+                          value={staffAccountForm.phone}
+                          onChange={(e) => setStaffAccountForm({ ...staffAccountForm, phone: e.target.value })}
+                          placeholder="081234567890"
+                          className={UI.input}
+                        />
+                      </Field>
+
+                      <Field label="Password Login *">
+                        <input
+                          type="password"
+                          required
+                          minLength={6}
+                          value={staffAccountForm.password}
+                          onChange={(e) => setStaffAccountForm({ ...staffAccountForm, password: e.target.value })}
+                          placeholder="Minimal 6 karakter"
+                          className={UI.input}
+                        />
+                      </Field>
+
+                      <p className="text-xs text-gray-500 bg-blue-50/60 p-2.5 rounded-lg border border-blue-100">
+                        Γä╣ Akun yang dibuat akan memiliki role <strong>petugas</strong> dan langsung dapat ditugaskan ke berbagai event.
+                      </p>
+
+                      <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => setShowCreateStaffModal(false)}
+                          className={UI.btnGhost}
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={staffAccountLoading}
+                          className={UI.btn}
+                        >
+                          {staffAccountLoading ? "Menyimpan..." : "Buat Akun Petugas"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal: Penugasan Petugas ke Event */}
+              {showAssignStaffModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                  <div className="w-full max-w-lg bg-white rounded-2xl border border-gray-200 shadow-2xl p-6 space-y-5">
+                    <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                      <div className="flex items-center gap-2 text-[#111d5e]">
+                        <ShieldCheck className="w-5 h-5 text-blue-600" />
+                        <h3 className="font-bold text-base text-gray-900">Tugaskan Petugas ke Event</h3>
+                      </div>
+                      <button onClick={() => setShowAssignStaffModal(false)} className={UI.iconBtn}>
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleAssignStaff} className="space-y-4">
+                      <Field label="Pilih Event *">
+                        <select
+                          required
+                          value={assignForm.event_id}
+                          onChange={(e) => setAssignForm({ ...assignForm, event_id: e.target.value })}
+                          className={UI.input}
+                        >
+                          <option value="">-- Pilih Event --</option>
+                          {events.map((evt) => (
+                            <option key={evt.id} value={evt.id}>
+                              {evt.name} ({formatDate(evt.event_date)})
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+
+                      <Field label="Pilih Akun Petugas *">
+                        <select
+                          required
+                          value={assignForm.user_id}
+                          onChange={(e) => setAssignForm({ ...assignForm, user_id: e.target.value })}
+                          className={UI.input}
+                        >
+                          <option value="">-- Pilih Akun Petugas --</option>
+                          {petugasUsers.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({p.email})
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+
+                      <div>
+                        <label className={UI.label}>Tentukan Izin Operasional (Permissions) *</label>
+                        <div className="space-y-2.5 mt-2 bg-gray-50/70 p-3.5 rounded-xl border border-gray-200">
+                          {[
+                            {
+                              id: "checkin",
+                              name: "Check-in Tiket",
+                              desc: "Memindai QR Code e-ticket pengunjung di pintu masuk venue.",
+                            },
+                            {
+                              id: "offline_sales",
+                              name: "Penjualan Tiket Offline OTS",
+                              desc: "Melayani transaksi penjualan tiket langsung di loket venue.",
+                            },
+                            {
+                              id: "view_visitors",
+                              name: "Lihat Riwayat Pengunjung",
+                              desc: "Melihat daftar kehadiran pengunjung yang telah check-in.",
+                            },
+                            {
+                              id: "view_reports",
+                              name: "Lihat Dashboard Laporan",
+                              desc: "Melihat metrik statistik kehadiran dan penjualan event ini.",
+                            },
+                          ].map((perm) => {
+                            const isChecked = assignForm.permissions.includes(perm.id);
+                            return (
+                              <label
+                                key={perm.id}
+                                className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all ${isChecked
+                                    ? "bg-white border-[#111d5e]/30 shadow-sm"
+                                    : "bg-transparent border-gray-200 hover:bg-gray-100/50"
+                                  }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  className="mt-1 h-4 w-4 rounded border-gray-300 text-[#111d5e] focus:ring-[#111d5e]"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setAssignForm({
+                                        ...assignForm,
+                                        permissions: [...assignForm.permissions, perm.id],
+                                      });
+                                    } else {
+                                      setAssignForm({
+                                        ...assignForm,
+                                        permissions: assignForm.permissions.filter((p) => p !== perm.id),
+                                      });
+                                    }
+                                  }}
+                                />
+                                <div>
+                                  <p className="text-xs font-bold text-gray-900">{perm.name}</p>
+                                  <p className="text-[11px] text-gray-500 leading-tight">{perm.desc}</p>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => setShowAssignStaffModal(false)}
+                          className={UI.btnGhost}
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={assignLoading}
+                          className={UI.btn}
+                        >
+                          {assignLoading ? "Menugaskan..." : "Tugaskan ke Event"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {/* Modal: Edit Permissions */}
+              {editingAssignment && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                  <div className="w-full max-w-md bg-white rounded-2xl border border-gray-200 shadow-2xl p-6 space-y-5">
+                    <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                      <div className="flex items-center gap-2 text-[#111d5e]">
+                        <KeyRound className="w-5 h-5 text-amber-600" />
+                        <div>
+                          <h3 className="font-bold text-sm text-gray-900">Ubah Izin Petugas</h3>
+                          <p className="text-[11px] text-gray-500">
+                            {editingAssignment.staff_name} ΓÇó {editingAssignment.event_name}
+                          </p>
+                        </div>
+                      </div>
+                      <button onClick={() => setEditingAssignment(null)} className={UI.iconBtn}>
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleSaveEditedPermissions} className="space-y-4">
+                      <div className="space-y-2.5 bg-gray-50/70 p-3.5 rounded-xl border border-gray-200">
+                        {[
+                          { id: "checkin", name: "Check-in Tiket", desc: "Validasi tiket masuk pengunjung." },
+                          { id: "offline_sales", name: "Penjualan Offline OTS", desc: "Melayani penjualan tiket di loket." },
+                          { id: "view_visitors", name: "Lihat Riwayat Pengunjung", desc: "Melihat daftar check-in event." },
+                          { id: "view_reports", name: "Lihat Dashboard Laporan", desc: "Melihat statistik penjualan event." },
+                        ].map((perm) => {
+                          const isChecked = editPermissions.includes(perm.id);
+                          return (
+                            <label
+                              key={perm.id}
+                              className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all ${isChecked
+                                  ? "bg-white border-[#111d5e]/30 shadow-sm"
+                                  : "bg-transparent border-gray-200 hover:bg-gray-100/50"
+                                }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="mt-1 h-4 w-4 rounded border-gray-300 text-[#111d5e] focus:ring-[#111d5e]"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setEditPermissions([...editPermissions, perm.id]);
+                                  } else {
+                                    setEditPermissions(editPermissions.filter((p) => p !== perm.id));
+                                  }
+                                }}
+                              />
+                              <div>
+                                <p className="text-xs font-bold text-gray-900">{perm.name}</p>
+                                <p className="text-[11px] text-gray-500">{perm.desc}</p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                        <button
+                          type="button"
+                          onClick={() => setEditingAssignment(null)}
+                          className={UI.btnGhost}
+                        >
+                          Batal
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={editLoading}
+                          className={UI.btn}
+                        >
+                          {editLoading ? "Menyimpan..." : "Simpan Perubahan"}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ===== BANNERS ===== */}
           {tab === "banners" && (
             <div className="space-y-6">
@@ -913,7 +1689,7 @@ export default function AdminPage() {
                           type="text"
                           value={bannerForm.link_url || ""}
                           onChange={(e) => setBannerForm({ ...bannerForm, link_url: e.target.value })}
-                          placeholder="/events atau https://…"
+                          placeholder="/events atau https://ΓÇª"
                           className={UI.input}
                         />
                         <p className={UI.hint}>Halaman yang dibuka saat banner diklik.</p>
@@ -937,9 +1713,8 @@ export default function AdminPage() {
                               key={mode}
                               type="button"
                               onClick={() => setBannerImageMode(mode)}
-                              className={`px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 transition-colors ${
-                                bannerImageMode === mode ? "bg-white text-gray-900 font-medium shadow-sm" : "text-gray-600 hover:text-gray-900"
-                              }`}
+                              className={`px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 transition-colors ${bannerImageMode === mode ? "bg-white text-gray-900 font-medium shadow-sm" : "text-gray-600 hover:text-gray-900"
+                                }`}
                             >
                               <Icon className="w-3.5 h-3.5" /> {text}
                             </button>
@@ -979,7 +1754,7 @@ export default function AdminPage() {
                                 setBannerPreview(e.target.value);
                               }}
                               className={UI.input}
-                              placeholder="https://…"
+                              placeholder="https://ΓÇª"
                             />
                             <p className={UI.hint}>Tempel tautan langsung ke gambar.</p>
                           </>
@@ -1014,7 +1789,7 @@ export default function AdminPage() {
 
                   <div className="flex gap-2 mt-6 pt-5 border-t border-gray-100">
                     <button onClick={handleSaveBanner} disabled={bannerSaving} className={UI.btn}>
-                      {bannerSaving ? "Menyimpan…" : editingBanner?.id ? "Simpan perubahan" : "Simpan banner"}
+                      {bannerSaving ? "MenyimpanΓÇª" : editingBanner?.id ? "Simpan perubahan" : "Simpan banner"}
                     </button>
                     <button onClick={closeBannerForm} disabled={bannerSaving} className={UI.btnGhost}>Batal</button>
                   </div>

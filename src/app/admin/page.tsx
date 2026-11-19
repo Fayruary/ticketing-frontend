@@ -2,20 +2,29 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import useAuth from "@/hooks/useAuth";
 import { getAdminDashboard, type AdminDashboard } from "@/services/dashboardService";
 import { getEvents, createEvent, updateEvent, deleteEvent, publishEvent, type Event } from "@/services/eventService";
 import {
-  getBanners, createBanner, updateBanner, toggleBanner, deleteBanner,
-  resolveBannerImageUrl, type Banner,
+  getBanners,
+  createBanner,
+  updateBanner,
+  toggleBanner,
+  deleteBanner,
+  resolveBannerImageUrl,
+  type Banner,
 } from "@/services/bannerService";
 import { getPackages, createPackage, deletePackage, type CooperationPackage } from "@/services/packageService";
 import { getOrganizers, type Organizer } from "@/services/organizerService";
 import { getUsers, deleteUser } from "@/services/userService";
 import { getAllOrders, type Order } from "@/services/orderService";
-import { getTicketCategories, createTicketCategory, updateTicketCategory, deleteTicketCategory, type TicketCategory } from "@/services/ticketService";
-import { formatDate, formatRupiah, getStatusLabel } from "@/lib/utils";
+import {
+  getTicketCategories,
+  createTicketCategory,
+  updateTicketCategory,
+  deleteTicketCategory,
+  type TicketCategory,
+} from "@/services/ticketService";
 import type { User as AuthUser } from "@/lib/auth";
 import {
   getAllStaffAssignments,
@@ -28,233 +37,17 @@ import {
   type StaffAssignment,
   type PetugasUser,
 } from "@/services/staffService";
-import {
-  LayoutDashboard, CalendarDays, Users, Package, Receipt, ImageIcon, LogOut, Wallet,
-  Plus, Trash2, Pencil, Menu, X, Upload, Link as LinkIcon, Check, Ticket,
-  UserCheck, Shield, ShieldCheck, KeyRound, CheckSquare, Square, Search, Filter,
-  ChevronLeft, ChevronRight,
-} from "lucide-react";
 
-type AdminTab = "overview" | "events" | "staff" | "banners" | "packages" | "users" | "orders";
-
-const PAGE_SIZE = 5;
-
-/** Biaya layanan website per order lunas (Rp). Pendapatan platform dihitung dari ini, bukan dari harga tiket. */
-const SERVICE_FEE = 5000;
-
-const FALLBACK_IMG =
-  "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1200&q=80";
-
-/* ---------- Design tokens ---------- */
-const UI = {
-  card: "bg-white rounded-2xl border border-gray-200/80 shadow-[0_1px_3px_rgba(17,29,94,0.06)]",
-  input:
-    "w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-[#111d5e] focus:ring-1 focus:ring-[#111d5e]",
-  label: "block text-sm font-medium text-gray-700 mb-1",
-  hint: "text-xs text-gray-500 mt-1",
-  btn: "inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white bg-[#111d5e] hover:bg-[#0c1543] disabled:opacity-60 disabled:cursor-not-allowed transition-colors",
-  btnGhost:
-    "inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 transition-colors",
-  btnLink: "text-sm font-medium text-[#111d5e] hover:underline",
-  iconBtn: "p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors",
-  iconBtnDanger: "p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors",
-  th: "px-5 py-3 text-left text-xs font-medium text-gray-500",
-  td: "px-5 py-3.5 text-sm text-gray-700",
-};
-
-const TONE: Record<string, string> = {
-  green: "bg-emerald-50 text-emerald-700",
-  amber: "bg-amber-50 text-amber-700",
-  red: "bg-red-50 text-red-700",
-  blue: "bg-blue-50 text-blue-700",
-  gray: "bg-gray-100 text-gray-600",
-};
-const DOT: Record<string, string> = {
-  green: "bg-emerald-500", amber: "bg-amber-500", red: "bg-red-500", blue: "bg-blue-500", gray: "bg-gray-400",
-};
-
-const TAB_DESC: Record<AdminTab, string> = {
-  overview: "Gambaran singkat performa penjualan dan aktivitas platform.",
-  events: "Buat, publikasikan, dan atur tiket untuk setiap event.",
-  staff: "Kelola akun petugas, penugasan ke event, hak akses, dan status keaktifan.",
-  banners: "Atur banner yang tampil di beranda.",
-  packages: "Paket yang ditawarkan kepada event organizer.",
-  users: "Daftar akun yang terdaftar di TixGoo.",
-  orders: "Semua transaksi pembelian tiket.",
-};
-
-/* ---------- Pagination ---------- */
-
-/** Potong list menjadi halaman berisi PAGE_SIZE data. Halaman otomatis menyesuaikan saat data berkurang. */
-function usePagination<T>(items: T[], pageSize = PAGE_SIZE) {
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
-
-  const current = Math.min(page, totalPages);
-  const pageItems = items.slice((current - 1) * pageSize, current * pageSize);
-
-  return { page: current, setPage, totalPages, pageItems, total: items.length, pageSize };
-}
-
-function Pagination({
-  page, totalPages, total, pageSize, onChange, inCard = false,
-}: {
-  page: number;
-  totalPages: number;
-  total: number;
-  pageSize: number;
-  onChange: (p: number) => void;
-  inCard?: boolean;
-}) {
-  if (total <= pageSize) return null;
-
-  const from = (page - 1) * pageSize + 1;
-  const to = Math.min(page * pageSize, total);
-  const btn =
-    "inline-flex items-center justify-center w-9 h-9 rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm hover:bg-gray-50 hover:text-gray-900 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:active:scale-100";
-
-  return (
-    <nav
-      aria-label="Navigasi halaman"
-      className={`flex items-center justify-between gap-3 ${inCard ? "px-5 py-3 border-t border-gray-100" : "pt-1"
-        }`}
-    >
-      <p className="text-sm text-gray-500">
-        Menampilkan <span className="font-medium text-gray-700">{from} - {to}</span> dari{" "}
-        <span className="font-medium text-gray-700">{total}</span>
-      </p>
-
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => onChange(page - 1)}
-          disabled={page === 1}
-          aria-label="Halaman sebelumnya"
-          title="Sebelumnya"
-          className={btn}
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-
-        <span
-          aria-live="polite"
-          aria-label={`Halaman ${page} dari ${totalPages}`}
-          className="inline-flex items-center justify-center h-9 min-w-9 px-3 rounded-lg bg-[#111d5e] text-white text-sm font-medium tabular-nums"
-        >
-          {page}
-        </span>
-
-        <button
-          type="button"
-          onClick={() => onChange(page + 1)}
-          disabled={page === totalPages}
-          aria-label="Halaman berikutnya"
-          title="Berikutnya"
-          className={btn}
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-    </nav>
-  );
-}
-
-/* ---------- Small building blocks ---------- */
-function Badge({ tone, children }: { tone: keyof typeof TONE; children: React.ReactNode }) {
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium ${TONE[tone]}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${DOT[tone]}`} />
-      {children}
-    </span>
-  );
-}
-
-function Field({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={className}>
-      <label className={UI.label}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function Table({
-  head, children, empty, footer,
-}: {
-  head: { label: string; align?: "right" | "center" }[];
-  children: React.ReactNode;
-  empty?: string;
-  footer?: React.ReactNode;
-}) {
-  const hasRows = React.Children.count(children) > 0;
-  return (
-    <div className={`${UI.card} overflow-hidden`}>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              {head.map((h) => (
-                <th key={h.label} className={`${UI.th} ${h.align === "right" ? "text-right" : h.align === "center" ? "text-center" : ""}`}>
-                  {h.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">{children}</tbody>
-        </table>
-      </div>
-      {!hasRows && <p className="text-sm text-gray-500 text-center py-10">{empty || "Belum ada data."}</p>}
-      {footer}
-    </div>
-  );
-}
-
-function FormPanel({ title, onClose, children }: { title: string; onClose?: () => void; children: React.ReactNode }) {
-  return (
-    <div className={`${UI.card} p-6`}>
-      <div className="flex items-center justify-between mb-5">
-        <h3 className="text-base font-semibold text-gray-900">{title}</h3>
-        {onClose && (
-          <button onClick={onClose} className={UI.iconBtn} aria-label="Tutup">
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function SectionBar({ text, action }: { text: React.ReactNode; action?: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <p className="text-sm text-gray-500">{text}</p>
-      {action}
-    </div>
-  );
-}
-
-/** Input rupiah: ketik angka saja, tampil otomatis sebagai 90.000 */
-function RupiahInput({ value, onChange }: { value?: number; onChange: (n: number) => void }) {
-  const display = value ? new Intl.NumberFormat("id-ID").format(value) : "";
-  return (
-    <div className="relative">
-      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 pointer-events-none">Rp</span>
-      <input
-        type="text"
-        inputMode="numeric"
-        placeholder="0"
-        value={display}
-        onChange={(e) => onChange(Number(e.target.value.replace(/\D/g, "")) || 0)}
-        className={`${UI.input} pl-9 tabular-nums`}
-      />
-    </div>
-  );
-}
+import type { AdminTab } from "@/components/admin/adminTokens";
+import AdminSidebar from "@/components/admin/AdminSidebar";
+import AdminHeader from "@/components/admin/AdminHeader";
+import OverviewTab from "@/components/admin/OverviewTab";
+import EventsTab from "@/components/admin/EventsTab";
+import StaffTab from "@/components/admin/StaffTab";
+import BannersTab from "@/components/admin/BannersTab";
+import PackagesTab from "@/components/admin/PackagesTab";
+import UsersTab from "@/components/admin/UsersTab";
+import OrdersTab from "@/components/admin/OrdersTab";
 
 export default function AdminPage() {
   const router = useRouter();
@@ -263,6 +56,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<AdminTab>("overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Platform Data
   const [dashboard, setDashboard] = useState<AdminDashboard | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
@@ -277,14 +71,17 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // Event Form State
   const [showEventForm, setShowEventForm] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Partial<Event> | null>(null);
   const [eventForm, setEventForm] = useState<Partial<Event>>({});
 
+  // Ticket Form State
   const [showTicketForm, setShowTicketForm] = useState(false);
   const [ticketForm, setTicketForm] = useState<Partial<TicketCategory>>({});
   const [editingTicketId, setEditingTicketId] = useState<string | null>(null);
 
+  // Banner Form State
   const [showBannerForm, setShowBannerForm] = useState(false);
   const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
   const [bannerForm, setBannerForm] = useState<Partial<Banner>>({});
@@ -293,6 +90,7 @@ export default function AdminPage() {
   const [bannerPreview, setBannerPreview] = useState<string>("");
   const [bannerSaving, setBannerSaving] = useState(false);
 
+  // Package Form State
   const [showPackageForm, setShowPackageForm] = useState(false);
   const [packageForm, setPackageForm] = useState<Partial<CooperationPackage>>({});
 
@@ -322,38 +120,56 @@ export default function AdminPage() {
   const [editPermissions, setEditPermissions] = useState<string[]>([]);
   const [editLoading, setEditLoading] = useState(false);
 
-  // Pagination: 5 data per halaman untuk setiap list
-  const eventPg = usePagination(events);
-  const ticketPg = usePagination(ticketCategories);
-  const bannerPg = usePagination(banners);
-  const packagePg = usePagination(packages);
-  const userPg = usePagination(users);
-  const orderPg = usePagination(orders);
+  // Auth Protection
   useEffect(() => {
-    if (!authLoading && (!isAuthenticated || role !== "admin")) router.push("/login");
-  }, [authLoading, isAuthenticated, role]);
+    if (!authLoading && (!isAuthenticated || role !== "admin")) {
+      router.push("/login");
+    }
+  }, [authLoading, isAuthenticated, role, router]);
 
   useEffect(() => {
-    if (isAuthenticated && role === "admin") fetchAll();
+    if (isAuthenticated && role === "admin") {
+      fetchAll();
+    }
   }, [isAuthenticated, role]);
 
   useEffect(() => {
-    if (selectedEventForTickets) fetchTicketCategories(selectedEventForTickets);
+    if (selectedEventForTickets) {
+      fetchTicketCategories(selectedEventForTickets);
+    }
   }, [selectedEventForTickets]);
 
-  // Ganti event pada panel kategori tiket: kembali ke halaman 1
-  const resetTicketPage = ticketPg.setPage;
-  useEffect(() => {
-    resetTicketPage(1);
-  }, [selectedEventForTickets]);
+  const showSuccess = (msg: string) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(null), 3000);
+  };
+
+  const run = async (fn: () => Promise<unknown>, okMsg: string, after?: () => void) => {
+    try {
+      await fn();
+      showSuccess(okMsg);
+      after?.();
+    } catch (err: any) {
+      setError(err.message || "Terjadi kesalahan");
+    }
+  };
 
   const fetchAll = async (): Promise<boolean> => {
     try {
       setLoading(true);
-      const [dashRes, evtRes, banRes, pkgRes, orgRes, usrRes, ordRes, staffRes, petugasRes] = await Promise.allSettled([
-        getAdminDashboard(), getEvents(), getBanners(), getPackages(), getOrganizers(), getUsers(), getAllOrders(),
-        getAllStaffAssignments(), getAllPetugasUsers(),
-      ]);
+      const [dashRes, evtRes, banRes, pkgRes, orgRes, usrRes, ordRes, staffRes, petugasRes] =
+        await Promise.allSettled([
+          getAdminDashboard(),
+          getEvents(),
+          getBanners(),
+          getPackages(),
+          getOrganizers(),
+          getUsers(),
+          getAllOrders(),
+          getAllStaffAssignments(),
+          getAllPetugasUsers(),
+        ]);
+
       if (dashRes.status === "fulfilled") setDashboard(dashRes.value as any);
       if (evtRes.status === "fulfilled") setEvents(Array.isArray(evtRes.value) ? evtRes.value : []);
       if (banRes.status === "fulfilled") setBanners(Array.isArray(banRes.value) ? banRes.value : []);
@@ -380,46 +196,59 @@ export default function AdminPage() {
     try {
       const res: any = await getTicketCategories(eventId);
       setTicketCategories(Array.isArray(res) ? res : res?.data || []);
-    } catch { setTicketCategories([]); }
-  };
-
-  const showSuccess = (msg: string) => {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(null), 3000);
-  };
-
-  /** Jalankan aksi async, tampilkan pesan sukses / error, lalu muat ulang data */
-  const run = async (fn: () => Promise<unknown>, okMsg: string, after?: () => void) => {
-    try {
-      await fn();
-      showSuccess(okMsg);
-      after?.();
-    } catch (err: any) {
-      setError(err.message || "Terjadi kesalahan");
+    } catch {
+      setTicketCategories([]);
     }
   };
 
-  // --- Events ---
-  const closeEventForm = () => { setShowEventForm(false); setEventForm({}); setEditingEvent(null); };
+  // --- Events Handlers ---
+  const closeEventForm = () => {
+    setShowEventForm(false);
+    setEventForm({});
+    setEditingEvent(null);
+  };
+
   const handleSaveEvent = () =>
     run(
       () => (editingEvent?.id ? updateEvent(editingEvent.id, eventForm) : createEvent(eventForm)),
       editingEvent?.id ? "Event diperbarui" : "Event ditambahkan",
-      () => { closeEventForm(); fetchAll(); }
+      () => {
+        closeEventForm();
+        fetchAll();
+      }
     );
+
   const handleDeleteEvent = (id: string) =>
     confirm("Hapus event ini?") && run(() => deleteEvent(id), "Event dihapus", fetchAll);
-  const handlePublishEvent = (id: string) => run(() => publishEvent(id), "Event dipublikasikan", fetchAll);
 
-  // --- Ticket categories ---
-  const closeTicketForm = () => { setShowTicketForm(false); setTicketForm({}); setEditingTicketId(null); };
+  const handlePublishEvent = (id: string) =>
+    run(() => publishEvent(id), "Event dipublikasikan", fetchAll);
+
+  const openCreateEvent = () => {
+    setEditingEvent(null);
+    setEventForm({});
+    setShowEventForm(true);
+    setTab("events");
+  };
+
+  // --- Ticket Categories Handlers ---
+  const closeTicketForm = () => {
+    setShowTicketForm(false);
+    setTicketForm({});
+    setEditingTicketId(null);
+  };
+
   const openEditTicket = (cat: TicketCategory) => {
     setEditingTicketId(String(cat.id));
     setTicketForm({ name: cat.name, price: cat.price, stock: cat.stock });
     setShowTicketForm(true);
   };
+
   const handleSaveTicketCategory = () => {
-    if (!ticketForm.name?.trim()) { setError("Nama kategori wajib diisi"); return; }
+    if (!ticketForm.name?.trim()) {
+      setError("Nama kategori wajib diisi");
+      return;
+    }
     const data = { name: ticketForm.name.trim(), price: ticketForm.price || 0, stock: ticketForm.stock || 0 };
     return run(
       () =>
@@ -427,16 +256,26 @@ export default function AdminPage() {
           ? updateTicketCategory(editingTicketId, data as any)
           : createTicketCategory({ ...data, event_id: selectedEventForTickets } as any),
       editingTicketId ? "Kategori tiket diperbarui" : "Kategori tiket ditambahkan",
-      () => { closeTicketForm(); fetchTicketCategories(selectedEventForTickets); }
+      () => {
+        closeTicketForm();
+        fetchTicketCategories(selectedEventForTickets);
+      }
     );
   };
+
   const handleDeleteTicketCategory = (id: string) =>
     confirm("Hapus kategori tiket ini?") &&
-    run(() => deleteTicketCategory(id), "Kategori tiket dihapus", () => fetchTicketCategories(selectedEventForTickets));
+    run(() => deleteTicketCategory(id), "Kategori tiket dihapus", () =>
+      fetchTicketCategories(selectedEventForTickets)
+    );
 
-  // --- Banners ---
+  // --- Banners Handlers ---
   const closeBannerForm = () => {
-    setShowBannerForm(false); setEditingBanner(null); setBannerForm({}); setBannerFile(null); setBannerPreview("");
+    setShowBannerForm(false);
+    setEditingBanner(null);
+    setBannerForm({});
+    setBannerFile(null);
+    setBannerPreview("");
   };
 
   const openCreateBanner = () => {
@@ -466,8 +305,10 @@ export default function AdminPage() {
     try {
       setBannerSaving(true);
       if (!bannerForm.title?.trim()) throw new Error("Judul banner wajib diisi");
-      if (bannerImageMode === "file" && !bannerFile && !editingBanner?.image) throw new Error("Pilih file gambar banner");
-      if (bannerImageMode === "url" && !bannerForm.image?.trim() && !editingBanner?.image) throw new Error("URL gambar banner wajib diisi");
+      if (bannerImageMode === "file" && !bannerFile && !editingBanner?.image)
+        throw new Error("Pilih file gambar banner");
+      if (bannerImageMode === "url" && !bannerForm.image?.trim() && !editingBanner?.image)
+        throw new Error("URL gambar banner wajib diisi");
 
       const title = bannerForm.title.trim();
       const link_url = bannerForm.link_url?.trim() || "/events";
@@ -482,7 +323,12 @@ export default function AdminPage() {
         fd.append("image", bannerFile);
         payload = fd;
       } else {
-        payload = { title, link_url, is_active, image: bannerForm.image?.trim() || editingBanner?.image || "" };
+        payload = {
+          title,
+          link_url,
+          is_active,
+          image: bannerForm.image?.trim() || editingBanner?.image || "",
+        };
       }
 
       if (editingBanner?.id) {
@@ -501,15 +347,27 @@ export default function AdminPage() {
     }
   };
 
-  const handleToggleBanner = (id: number | string) => run(() => toggleBanner(id), "Status banner diubah", fetchAll);
+  const handleToggleBanner = (id: number | string) =>
+    run(() => toggleBanner(id), "Status banner diubah", fetchAll);
+
   const handleDeleteBanner = (id: number | string) =>
     confirm("Hapus banner ini?") && run(() => deleteBanner(id), "Banner dihapus", fetchAll);
 
-  // --- Packages & users ---
+  // --- Packages & Users Handlers ---
   const handleSavePackage = () =>
-    run(() => createPackage(packageForm), "Paket ditambahkan", () => { setShowPackageForm(false); setPackageForm({}); fetchAll(); });
+    run(
+      () => createPackage(packageForm),
+      "Paket ditambahkan",
+      () => {
+        setShowPackageForm(false);
+        setPackageForm({});
+        fetchAll();
+      }
+    );
+
   const handleDeletePackage = (id: number) =>
     confirm("Hapus paket ini?") && run(() => deletePackage(id), "Paket dihapus", fetchAll);
+
   const handleDeleteUser = (id: string) =>
     confirm("Hapus pengguna ini?") && run(() => deleteUser(id), "Pengguna dihapus", fetchAll);
 
@@ -528,9 +386,7 @@ export default function AdminPage() {
         setError("Akun petugas berhasil dibuat, tetapi sinkronisasi data gagal. Silakan refresh halaman.");
         return;
       }
-      showSuccess(
-        `Akun petugas "${createdUser?.name || staffAccountForm.name}" berhasil dibuat!`
-      );
+      showSuccess(`Akun petugas "${createdUser?.name || staffAccountForm.name}" berhasil dibuat!`);
       setShowCreateStaffModal(false);
       setStaffAccountForm({ name: "", email: "", phone: "", password: "" });
       setStaffSubTab("users");
@@ -616,7 +472,11 @@ export default function AdminPage() {
       setError("ID penugasan tidak valid");
       return;
     }
-    if (confirm(`Hapus penugasan ${assignment.staff_name || "petugas"} dari event ${assignment.event_name || ""}?`)) {
+    if (
+      confirm(
+        `Hapus penugasan ${assignment.staff_name || "petugas"} dari event ${assignment.event_name || ""}?`
+      )
+    ) {
       run(() => removeStaff(assignmentId), "Penugasan petugas berhasil dihapus", fetchAll);
     }
   };
@@ -634,1366 +494,172 @@ export default function AdminPage() {
 
   if (!isAuthenticated || role !== "admin") return null;
 
-  const navItems: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
-    { id: "overview", label: "Ringkasan", icon: <LayoutDashboard className="w-4 h-4" /> },
-    { id: "events", label: "Event", icon: <CalendarDays className="w-4 h-4" /> },
-    { id: "staff", label: "Petugas event", icon: <UserCheck className="w-4 h-4" /> },
-    { id: "banners", label: "Banner promo", icon: <ImageIcon className="w-4 h-4" /> },
-    { id: "packages", label: "Paket kerja sama", icon: <Package className="w-4 h-4" /> },
-    { id: "users", label: "Pengguna", icon: <Users className="w-4 h-4" /> },
-    { id: "orders", label: "Penjualan", icon: <Receipt className="w-4 h-4" /> },
-  ];
-
-  const orderBadge = (status: string) => (
-    <Badge tone={status === "paid" ? "green" : status === "pending" ? "amber" : "red"}>{getStatusLabel(status)}</Badge>
-  );
-
-  const orderHead = [
-    { label: "Invoice" }, { label: "Pembeli" }, { label: "Total", align: "right" as const },
-    { label: "Status" }, { label: "Tanggal" },
-  ];
-
-  const orderRow = (order: Order) => (
-    <tr key={order.id} className="hover:bg-gray-50">
-      <td className={`${UI.td} font-mono text-[13px] text-gray-900`}>{order.invoice_code}</td>
-      <td className={UI.td}>{(order as any).buyer_name || "-"}</td>
-      <td className={`${UI.td} text-right font-medium text-gray-900`}>{formatRupiah(order.total)}</td>
-      <td className={UI.td}>{orderBadge(order.status)}</td>
-      <td className={`${UI.td} text-gray-500`}>{formatDate(order.created_at)}</td>
-    </tr>
-  );
-
-  const eventFields: { key: string; label: string; type: string }[] = [
-    { key: "name", label: "Nama event", type: "text" },
-    { key: "city", label: "Kota", type: "text" },
-    { key: "venue", label: "Venue", type: "text" },
-    { key: "capacity", label: "Kapasitas", type: "number" },
-    { key: "event_date", label: "Tanggal", type: "date" },
-    { key: "event_time", label: "Waktu", type: "time" },
-    { key: "genre", label: "Genre musik", type: "text" },
-    { key: "poster", label: "URL poster", type: "url" },
-  ];
-
-  // Jumlah tiket dalam satu order (menyesuaikan struktur data order; default 1)
-  const ticketCountOf = (o: Order): number => {
-    const a = o as any;
-    if (typeof a.quantity === "number") return a.quantity;
-    if (typeof a.total_tickets === "number") return a.total_tickets;
-    if (Array.isArray(a.items)) return a.items.reduce((s: number, i: any) => s + (Number(i.quantity) || 1), 0);
-    if (Array.isArray(a.tickets)) return a.tickets.length;
-    return 1;
-  };
-
-  const paidOrders = orders.filter((o) => o.status === "paid");
-
-  // Tiket terjual: jumlah tiket dari semua order lunas
-  const ticketsSold = paidOrders.reduce((sum, o) => sum + ticketCountOf(o), 0);
-
-  // Pendapatan platform: biaya layanan per order lunas (paket 2 tiket tetap dihitung 1 kali)
-  const serviceRevenue = paidOrders.length * SERVICE_FEE;
-
-  const stats = [
-    { label: "Pendapatan layanan", value: formatRupiah(serviceRevenue), icon: <Wallet className="w-5 h-5" />, chip: "bg-blue-50 text-[#111d5e]" },
-    { label: "Tiket terjual", value: ticketsSold.toLocaleString("id-ID"), icon: <Ticket className="w-5 h-5" />, chip: "bg-emerald-50 text-emerald-600" },
-    { label: "Event", value: String(dashboard?.total_events || events.length), icon: <CalendarDays className="w-5 h-5" />, chip: "bg-amber-50 text-amber-600" },
-    { label: "Pengguna", value: String(dashboard?.total_users || users.length), icon: <Users className="w-5 h-5" />, chip: "bg-violet-50 text-violet-600" },
-  ];
-
-  const activeBanners = banners.filter((b) => b.is_active).length;
-
   return (
-    <div className="min-h-screen flex bg-[#f3f5fa] text-gray-900">
-      {/* Sidebar */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 flex flex-col bg-white border-r border-gray-200 transition-transform duration-200 ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
-          }`}
-      >
-        <div className="h-16 px-5 flex items-center justify-between border-b border-gray-200 shrink-0">
-          <Link href="/" className="flex items-center gap-2.5">
-            <img src="/logo-tix.png" alt="TixGoo" className="h-8 w-auto object-contain" />
-            <span className="text-xs font-medium text-gray-500 border-l border-gray-200 pl-2.5">Admin</span>
-          </Link>
-          <button onClick={() => setSidebarOpen(false)} className={`lg:hidden ${UI.iconBtn}`} aria-label="Tutup menu">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <div className="min-h-screen flex bg-[#f8fafc] text-gray-900">
+      {/* Sidebar Modular */}
+      <AdminSidebar
+        tab={tab}
+        setTab={setTab}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+        user={user}
+        logout={logout}
+        onLogoutRedirect={() => {
+          logout();
+          router.push("/login");
+        }}
+      />
 
-        <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => { setTab(item.id); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-colors ${tab === item.id
-                ? "bg-[#111d5e]/[0.08] text-[#111d5e] font-semibold shadow-[inset_3px_0_0_#111d5e]"
-                : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                }`}
-            >
-              {item.icon}
-              {item.label}
-            </button>
-          ))}
-        </nav>
+      {/* Main Content Area */}
+      <div className="flex-1 lg:pl-72 flex flex-col min-w-0">
+        <AdminHeader tab={tab} setSidebarOpen={setSidebarOpen} user={user} />
 
-        <div className="p-3 border-t border-gray-200 shrink-0">
-          <div className="flex items-center gap-3 px-2 py-1.5">
-            <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 text-xs font-semibold flex items-center justify-center shrink-0">
-              {user?.name?.slice(0, 2).toUpperCase() || "AD"}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">{user?.name}</p>
-              <p className="text-xs text-gray-500">Administrator</p>
-            </div>
-            <button
-              onClick={() => { logout(); router.push("/"); }}
-              className={UI.iconBtnDanger}
-              title="Keluar"
-              aria-label="Keluar"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {sidebarOpen && <div className="fixed inset-0 bg-black/30 z-30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
-
-      {/* Main */}
-      <div className="flex-1 lg:ml-64 min-h-screen flex flex-col min-w-0">
-        <header className="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-gray-200 h-16 flex items-center gap-3 px-4 sm:px-8">
-          <button onClick={() => setSidebarOpen(true)} className={`lg:hidden ${UI.iconBtn}`} aria-label="Buka menu">
-            <Menu className="w-5 h-5" />
-          </button>
-          <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-gray-900 leading-tight">{navItems.find((n) => n.id === tab)?.label}</h1>
-            <p className="hidden sm:block text-xs text-gray-500 truncate">{TAB_DESC[tab]}</p>
-          </div>
-
-          {successMsg && (
-            <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-sm">
-              <Check className="w-4 h-4" /> {successMsg}
-            </div>
-          )}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6">
+          {/* Notifications */}
           {error && (
-            <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 text-red-700 text-sm">
-              {error}
-              <button onClick={() => setError(null)} aria-label="Tutup pesan">
-                <X className="w-3.5 h-3.5" />
+            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 flex items-center justify-between">
+              <span>{error}</span>
+              <button
+                onClick={() => setError(null)}
+                className="text-xs font-semibold hover:underline ml-4"
+              >
+                Tutup
               </button>
             </div>
           )}
-        </header>
 
-        <main className="flex-1 w-full max-w-6xl mx-auto p-4 sm:p-8">
-          {/* ===== OVERVIEW ===== */}
+          {successMsg && (
+            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700 flex items-center justify-between">
+              <span>{successMsg}</span>
+              <button
+                onClick={() => setSuccessMsg(null)}
+                className="text-xs font-semibold hover:underline ml-4"
+              >
+                Tutup
+              </button>
+            </div>
+          )}
+
+          {/* Active Modular Tab */}
           {tab === "overview" && (
-            <div className="space-y-8">
-              <div className="relative overflow-hidden rounded-2xl bg-[#111d5e] text-white p-6 sm:p-7">
-                <div className="absolute -right-10 -top-16 w-56 h-56 rounded-full bg-white/[0.05]" />
-                <div className="absolute right-24 -bottom-24 w-48 h-48 rounded-full bg-white/[0.04]" />
-                <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-5">
-                  <div>
-                    <h2 className="text-xl font-semibold">Halo, {user?.name?.split(" ")[0] || "Admin"}</h2>
-                    <p className="text-sm text-blue-100/80 mt-1">
-                      {orders.filter((o) => o.status === "pending").length} order menunggu pembayaran dan{" "}
-                      {events.filter((e) => e.status === "draft").length} event masih draft.
-                    </p>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      onClick={() => { setTab("events"); setShowEventForm(true); setEditingEvent(null); setEventForm({}); }}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white text-[#111d5e] text-sm font-medium hover:bg-blue-50 transition-colors"
-                    >
-                      <Plus className="w-4 h-4" /> Tambah event
-                    </button>
-                    <button
-                      onClick={() => setTab("banners")}
-                      className="inline-flex items-center px-4 py-2 rounded-lg border border-white/25 text-white text-sm font-medium hover:bg-white/10 transition-colors"
-                    >
-                      Kelola banner
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                {stats.map((s) => (
-                  <div key={s.label} className={`${UI.card} p-5 flex items-center gap-4`}>
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${s.chip}`}>{s.icon}</div>
-                    <div className="min-w-0">
-                      <p className="text-sm text-gray-500">{s.label}</p>
-                      <p className="text-xl font-semibold text-gray-900 tabular-nums truncate">{s.value}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <section className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-base font-semibold text-gray-900">Transaksi terbaru</h2>
-                  <button onClick={() => setTab("orders")} className={UI.btnLink}>Lihat semua</button>
-                </div>
-                <Table head={orderHead} empty="Belum ada transaksi.">
-                  {orders.slice(0, PAGE_SIZE).map(orderRow)}
-                </Table>
-              </section>
-            </div>
+            <OverviewTab
+              user={user}
+              orders={orders}
+              events={events}
+              users={users}
+              dashboard={dashboard}
+              setTab={setTab}
+              openCreateEvent={openCreateEvent}
+            />
           )}
 
-          {/* ===== EVENTS ===== */}
           {tab === "events" && (
-            <div className="space-y-6">
-              <SectionBar
-                text={`${events.length} event`}
-                action={
-                  <button
-                    onClick={() => { setShowEventForm(true); setEditingEvent(null); setEventForm({}); }}
-                    className={UI.btn}
-                  >
-                    <Plus className="w-4 h-4" /> Tambah event
-                  </button>
-                }
-              />
-
-              {showEventForm && (
-                <FormPanel title={editingEvent?.id ? "Edit event" : "Event baru"} onClose={closeEventForm}>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {eventFields.map(({ key, label, type }) => (
-                      <Field key={key} label={label}>
-                        <input
-                          type={type}
-                          value={(eventForm as any)[key] || ""}
-                          onChange={(e) => setEventForm({ ...eventForm, [key]: e.target.value })}
-                          className={UI.input}
-                        />
-                      </Field>
-                    ))}
-                    <Field label="Organizer" className="sm:col-span-2">
-                      <select
-                        value={(eventForm as any).organizer_id || ""}
-                        onChange={(e) => setEventForm({ ...eventForm, organizer_id: e.target.value })}
-                        className={UI.input}
-                      >
-                        <option value="">Tanpa organizer</option>
-                        {organizers.map((o) => (
-                          <option key={o.id} value={o.id}>{o.name} - {o.company_name}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="Deskripsi" className="sm:col-span-2">
-                      <textarea
-                        rows={3}
-                        value={(eventForm as any).description || ""}
-                        onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })}
-                        className={`${UI.input} resize-none`}
-                      />
-                    </Field>
-                  </div>
-                  <div className="flex gap-2 mt-6">
-                    <button onClick={handleSaveEvent} className={UI.btn}>
-                      {editingEvent?.id ? "Simpan perubahan" : "Simpan event"}
-                    </button>
-                    <button onClick={closeEventForm} className={UI.btnGhost}>Batal</button>
-                  </div>
-                </FormPanel>
-              )}
-
-              <Table
-                head={[{ label: "Nama event" }, { label: "Kota" }, { label: "Tanggal" }, { label: "Status" }, { label: "", align: "right" }]}
-                empty="Belum ada event."
-                footer={<Pagination {...eventPg} onChange={eventPg.setPage} inCard />}
-              >
-                {eventPg.pageItems.map((event) => (
-                  <tr key={event.id} className="hover:bg-gray-50">
-                    <td className={UI.td}>
-                      <div className="flex items-center gap-3">
-                        {(event as any).poster ? (
-                          <img src={(event as any).poster} alt="" className="w-10 h-10 rounded-lg object-cover bg-gray-100 shrink-0" onError={(e: any) => { e.target.style.visibility = "hidden"; }} />
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-blue-50 text-[#111d5e] flex items-center justify-center shrink-0">
-                            <CalendarDays className="w-4 h-4" />
-                          </div>
-                        )}
-                        <span className="font-medium text-gray-900">{event.name}</span>
-                      </div>
-                    </td>
-                    <td className={UI.td}>{event.city || "-"}</td>
-                    <td className={UI.td}>{formatDate(event.event_date)}</td>
-                    <td className={UI.td}>
-                      <Badge tone={event.status === "published" ? "green" : event.status === "draft" ? "gray" : "amber"}>
-                        {getStatusLabel(event.status)}
-                      </Badge>
-                    </td>
-                    <td className={UI.td}>
-                      <div className="flex items-center justify-end gap-1">
-                        {event.status === "draft" && (
-                          <button onClick={() => handlePublishEvent(event.id)} className={`${UI.btnLink} px-2`}>
-                            Publikasikan
-                          </button>
-                        )}
-                        <button onClick={() => setSelectedEventForTickets(event.id)} className={UI.iconBtn} title="Kategori tiket">
-                          <Ticket className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => { setEditingEvent(event); setEventForm(event); setShowEventForm(true); }}
-                          className={UI.iconBtn}
-                          title="Edit"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => handleDeleteEvent(event.id)} className={UI.iconBtnDanger} title="Hapus">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </Table>
-
-              {selectedEventForTickets && (
-                <section className={`${UI.card} p-6 space-y-4`}>
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <h3 className="text-base font-semibold text-gray-900">
-                      Kategori tiket ┬╖ {events.find((e) => e.id === selectedEventForTickets)?.name}
-                    </h3>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => { if (showTicketForm) closeTicketForm(); else { setEditingTicketId(null); setTicketForm({}); setShowTicketForm(true); } }}
-                        className={UI.btn}
-                      >
-                        <Plus className="w-4 h-4" /> Tambah kategori
-                      </button>
-                      <button onClick={() => { setSelectedEventForTickets(""); closeTicketForm(); }} className={UI.btnGhost}>
-                        Tutup
-                      </button>
-                    </div>
-                  </div>
-
-                  {showTicketForm && (
-                    <div className="p-4 bg-gray-50 rounded-lg space-y-4">
-                      <p className="text-sm font-medium text-gray-900">
-                        {editingTicketId ? "Edit kategori tiket" : "Kategori tiket baru"}
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <Field label="Nama (VIP, Regular, dll)">
-                          <input
-                            type="text"
-                            value={ticketForm.name || ""}
-                            onChange={(e) => setTicketForm({ ...ticketForm, name: e.target.value })}
-                            className={UI.input}
-                          />
-                        </Field>
-                        <Field label="Harga">
-                          <RupiahInput value={ticketForm.price} onChange={(n) => setTicketForm({ ...ticketForm, price: n })} />
-                        </Field>
-                        <Field label="Stok">
-                          <input
-                            type="number"
-                            min={0}
-                            value={ticketForm.stock ?? ""}
-                            onChange={(e) => setTicketForm({ ...ticketForm, stock: Number(e.target.value) })}
-                            className={UI.input}
-                          />
-                        </Field>
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={handleSaveTicketCategory} className={UI.btn}>
-                          {editingTicketId ? "Simpan perubahan" : "Simpan"}
-                        </button>
-                        <button onClick={closeTicketForm} className={UI.btnGhost}>Batal</button>
-                      </div>
-                    </div>
-                  )}
-
-                  {ticketCategories.length === 0 ? (
-                    <p className="text-sm text-gray-500 text-center py-6">Event ini belum punya kategori tiket.</p>
-                  ) : (
-                    <>
-                      <ul className="divide-y divide-gray-100 border border-gray-200 rounded-lg">
-                        {ticketPg.pageItems.map((cat) => (
-                          <li key={cat.id} className="flex items-center justify-between px-4 py-3">
-                            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-                              <span className="font-medium text-gray-900">{cat.name}</span>
-                              <span className="text-gray-600">{formatRupiah(cat.price)}</span>
-                              <span className="text-gray-500">Stok {cat.stock}</span>
-                            </div>
-                            <div className="flex items-center gap-0.5">
-                              <button onClick={() => openEditTicket(cat)} className={UI.iconBtn} title="Edit">
-                                <Pencil className="w-4 h-4" />
-                              </button>
-                              <button onClick={() => handleDeleteTicketCategory(cat.id)} className={UI.iconBtnDanger} title="Hapus">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                      <Pagination {...ticketPg} onChange={ticketPg.setPage} />
-                    </>
-                  )}
-                </section>
-              )}
-            </div>
+            <EventsTab
+              events={events}
+              organizers={organizers}
+              showEventForm={showEventForm}
+              setShowEventForm={setShowEventForm}
+              editingEvent={editingEvent}
+              setEditingEvent={setEditingEvent}
+              eventForm={eventForm}
+              setEventForm={setEventForm}
+              handleSaveEvent={handleSaveEvent}
+              handleDeleteEvent={handleDeleteEvent}
+              handlePublishEvent={handlePublishEvent}
+              closeEventForm={closeEventForm}
+              selectedEventForTickets={selectedEventForTickets}
+              setSelectedEventForTickets={setSelectedEventForTickets}
+              ticketCategories={ticketCategories}
+              showTicketForm={showTicketForm}
+              setShowTicketForm={setShowTicketForm}
+              editingTicketId={editingTicketId}
+              setEditingTicketId={setEditingTicketId}
+              ticketForm={ticketForm}
+              setTicketForm={setTicketForm}
+              handleSaveTicketCategory={handleSaveTicketCategory}
+              handleDeleteTicketCategory={handleDeleteTicketCategory}
+              closeTicketForm={closeTicketForm}
+              openEditTicket={openEditTicket}
+            />
           )}
 
-          {/* ===== STAFF MANAGEMENT ===== */}
           {tab === "staff" && (
-            <div className="space-y-6">
-              <SectionBar
-                text={`${staffAssignments.length} penugasan event (${staffAssignments.filter((s) => s.is_active).length} aktif) • ${petugasUsers.length} total akun petugas terdaftar`}
-                action={
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setShowCreateStaffModal(true)}
-                      className={UI.btnGhost}
-                    >
-                      <Users className="w-4 h-4 text-gray-600" />
-                      <span>+ Akun Petugas</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setAssignForm({
-                          event_id: events[0]?.id || "",
-                          user_id: petugasUsers[0]?.id || "",
-                          permissions: ["checkin"],
-                        });
-                        setShowAssignStaffModal(true);
-                      }}
-                      className={UI.btn}
-                      disabled={events.length === 0 || petugasUsers.length === 0}
-                      title={petugasUsers.length === 0 ? "Buat akun petugas terlebih dahulu" : undefined}
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Tugaskan Petugas</span>
-                    </button>
-                  </div>
-                }
-              />
-
-              {/* Sub-tab Navigation: Penugasan Event vs Daftar Akun Petugas */}
-              <div className="flex items-center justify-between border-b border-gray-200 pb-2">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setStaffSubTab("assignments")}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${staffSubTab === "assignments"
-                      ? "bg-[#111d5e] text-white shadow-sm"
-                      : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
-                      }`}
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Penugasan Event</span>
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${staffSubTab === "assignments" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700"
-                      }`}>
-                      {staffAssignments.length}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setStaffSubTab("users")}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${staffSubTab === "users"
-                      ? "bg-[#111d5e] text-white shadow-sm"
-                      : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
-                      }`}
-                  >
-                    <Users className="w-4 h-4" />
-                    <span>Daftar Akun Petugas</span>
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${staffSubTab === "users" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-700"
-                      }`}>
-                      {petugasUsers.length}
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Banner Info Petugas Belum Ditugaskan (jika sedang di tab Penugasan Event) */}
-              {staffSubTab === "assignments" && (() => {
-                const unassigned = petugasUsers.filter((p) => !p.total_assigned_events || p.total_assigned_events === 0);
-                if (unassigned.length === 0) return null;
-                return (
-                  <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-800">
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>
-                        Terdapat <strong>{unassigned.length} akun petugas terdaftar</strong> yang belum ditugaskan ke event mana pun ({unassigned.map(p => p.name).slice(0, 3).join(", ")}{unassigned.length > 3 ? "..." : ""}).
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setStaffSubTab("users")}
-                      className="font-bold text-amber-900 underline hover:text-amber-700 shrink-0 inline-flex items-center gap-1"
-                    >
-                      Lihat Akun Petugas <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-              })()}
-
-              {/* Filter & Search Bar */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-gray-200 shadow-sm">
-                <div className="flex items-center gap-2 flex-1 max-w-md">
-                  <div className="relative w-full">
-                    <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder={
-                        staffSubTab === "assignments"
-                          ? "Cari nama petugas, email, atau event..."
-                          : "Cari nama, email, atau no HP petugas..."
-                      }
-                      value={staffSearchQuery}
-                      onChange={(e) => setStaffSearchQuery(e.target.value)}
-                      className="w-full pl-9 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:bg-white focus:border-[#111d5e]"
-                    />
-                  </div>
-                  {staffSearchQuery && (
-                    <button onClick={() => setStaffSearchQuery("")} className="text-xs text-gray-400 hover:text-gray-600">
-                      Reset
-                    </button>
-                  )}
-                </div>
-
-                {staffSubTab === "assignments" && (
-                  <div className="flex items-center gap-2">
-                    <Filter className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-                    <span className="text-xs text-gray-500 font-medium shrink-0">Filter Event:</span>
-                    <select
-                      value={staffFilterEvent}
-                      onChange={(e) => setStaffFilterEvent(e.target.value)}
-                      className="text-xs py-1.5 px-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-700 font-medium focus:outline-none focus:border-[#111d5e]"
-                    >
-                      <option value="">Semua Event ({events.length})</option>
-                      {events.map((evt) => (
-                        <option key={evt.id} value={evt.id}>
-                          {evt.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              {/* TAMPILAN 1: PENUGASAN EVENT */}
-              {staffSubTab === "assignments" && (() => {
-                const filteredAssignments = staffAssignments.filter((a) => {
-                  const matchEvent = !staffFilterEvent || a.event_id === staffFilterEvent;
-                  const matchQuery =
-                    !staffSearchQuery ||
-                    (a.staff_name || "").toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
-                    (a.staff_email || "").toLowerCase().includes(staffSearchQuery.toLowerCase()) ||
-                    (a.event_name || "").toLowerCase().includes(staffSearchQuery.toLowerCase());
-                  return matchEvent && matchQuery;
-                });
-
-                const head = [
-                  { label: "Petugas Lapangan" },
-                  { label: "Event yang Ditugaskan" },
-                  { label: "Izin Operasional (Permissions)" },
-                  { label: "Status Penugasan" },
-                  { label: "Aksi", align: "right" as const },
-                ];
-
-                return (
-                  <Table head={head}>
-                    {filteredAssignments.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-10 text-center text-sm text-gray-500">
-                          {staffAssignments.length === 0
-                            ? "Belum ada penugasan petugas ke event. Klik '+ Tugaskan Petugas' untuk memulai penugasan."
-                            : "Tidak ada data penugasan yang cocok dengan filter pencarian."}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredAssignments.map((assignment) => {
-                        const assignmentKey = assignment.event_staff_id || assignment.id;
-                        return (
-                          <tr key={assignmentKey} className="hover:bg-gray-50 transition-colors">
-                            <td className={UI.td}>
-                              <div className="flex flex-col">
-                                <span className="font-semibold text-gray-900">{assignment.staff_name || "Petugas"}</span>
-                                <span className="text-xs text-gray-500">{assignment.staff_email || "-"}</span>
-                              </div>
-                            </td>
-                            <td className={UI.td}>
-                              <span className="font-medium text-gray-800 bg-gray-100 px-2.5 py-1 rounded-md text-xs border border-gray-200">
-                                {assignment.event_name || "Event"}
-                              </span>
-                            </td>
-                            <td className={UI.td}>
-                              <div className="flex flex-wrap gap-1.5">
-                                {(!assignment.permissions || assignment.permissions.length === 0) && (
-                                  <span className="text-xs text-gray-400 italic">Tidak ada izin</span>
-                                )}
-                                {assignment.permissions?.includes("checkin") && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    <Check className="w-3 h-3" /> Check-In
-                                  </span>
-                                )}
-                                {assignment.permissions?.includes("offline_sales") && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                                    <Check className="w-3 h-3" /> Offline OTS
-                                  </span>
-                                )}
-                                {assignment.permissions?.includes("view_visitors") && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                                    <Check className="w-3 h-3" /> Pengunjung
-                                  </span>
-                                )}
-                                {assignment.permissions?.includes("view_reports") && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-                                    <Check className="w-3 h-3" /> Laporan
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className={UI.td}>
-                              <button
-                                type="button"
-                                onClick={() => handleToggleStaffStatus(assignment)}
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${assignment.is_active
-                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
-                                  : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
-                                  }`}
-                                title="Klik untuk mengubah status aktif/nonaktif"
-                              >
-                                <span
-                                  className={`w-2 h-2 rounded-full ${assignment.is_active ? "bg-emerald-500" : "bg-gray-400"
-                                    }`}
-                                />
-                                {assignment.is_active ? "Aktif" : "Nonaktif"}
-                              </button>
-                            </td>
-                            <td className={`${UI.td} text-right`}>
-                              <div className="flex items-center justify-end gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditPermissions(assignment)}
-                                  className={UI.iconBtn}
-                                  title="Edit Hak Akses / Permissions"
-                                >
-                                  <Pencil className="w-4 h-4 text-gray-500 hover:text-blue-600" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveStaffAssignment(assignment)}
-                                  className={UI.iconBtnDanger}
-                                  title="Hapus Penugasan dari Event"
-                                >
-                                  <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-600" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </Table>
-                );
-              })()}
-
-              {/* TAMPILAN 2: DAFTAR AKUN PETUGAS */}
-              {staffSubTab === "users" && (() => {
-                const filteredPetugasUsers = petugasUsers.filter((p) => {
-                  if (!staffSearchQuery) return true;
-                  const q = staffSearchQuery.toLowerCase();
-                  return (
-                    (p.name || "").toLowerCase().includes(q) ||
-                    (p.email || "").toLowerCase().includes(q) ||
-                    (p.phone || "").toLowerCase().includes(q)
-                  );
-                });
-
-                return (
-                  <Table
-                    head={[
-                      { label: "Nama Petugas" },
-                      { label: "Email" },
-                      { label: "No. WhatsApp / HP" },
-                      { label: "Status Penugasan Event" },
-                      { label: "Terdaftar Pada" },
-                      { label: "Aksi", align: "right" as const },
-                    ]}
-                    empty="Belum ada akun petugas yang terdaftar. Klik '+ Akun Petugas' untuk membuat akun baru."
-                  >
-                    {filteredPetugasUsers.map((petugas) => (
-                      <tr key={petugas.id} className="hover:bg-gray-50 transition-colors">
-                        <td className={UI.td}>
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-700 text-xs font-bold flex items-center justify-center shrink-0">
-                              {petugas.name?.slice(0, 2).toUpperCase() || "PT"}
-                            </div>
-                            <span className="font-semibold text-gray-900">{petugas.name}</span>
-                          </div>
-                        </td>
-                        <td className={UI.td}>{petugas.email}</td>
-                        <td className={UI.td}>{petugas.phone || "-"}</td>
-                        <td className={UI.td}>
-                          {(petugas.total_assigned_events || 0) > 0 ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <Check className="w-3.5 h-3.5" /> {petugas.total_assigned_events} Event Ditugaskan
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                              Belum Ditugaskan
-                            </span>
-                          )}
-                        </td>
-                        <td className={`${UI.td} text-xs text-gray-500`}>
-                          {petugas.created_at ? formatDate(petugas.created_at) : "-"}
-                        </td>
-                        <td className={`${UI.td} text-right`}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAssignForm({
-                                event_id: events[0]?.id || "",
-                                user_id: petugas.id,
-                                permissions: ["checkin"],
-                              });
-                              setShowAssignStaffModal(true);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#111d5e] hover:bg-[#111d5e]/90 text-white transition-all shadow-sm"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Tugaskan ke Event</span>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </Table>
-                );
-              })()}
-
-              {/* Modal: Buat Akun Petugas Baru */}
-              {showCreateStaffModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-                  <div className="w-full max-w-md bg-white rounded-2xl border border-gray-200 shadow-2xl p-6 space-y-5">
-                    <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                      <div className="flex items-center gap-2 text-[#111d5e]">
-                        <UserCheck className="w-5 h-5 text-emerald-600" />
-                        <h3 className="font-bold text-base text-gray-900">Buat Akun Petugas Baru</h3>
-                      </div>
-                      <button onClick={() => setShowCreateStaffModal(false)} className={UI.iconBtn}>
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    <form onSubmit={handleCreateStaffAccount} className="space-y-4">
-                      <Field label="Nama Lengkap Petugas *">
-                        <input
-                          type="text"
-                          required
-                          value={staffAccountForm.name}
-                          onChange={(e) => setStaffAccountForm({ ...staffAccountForm, name: e.target.value })}
-                          placeholder="Contoh: Ahmad Fadilah"
-                          className={UI.input}
-                        />
-                      </Field>
-
-                      <Field label="Email Petugas *">
-                        <input
-                          type="email"
-                          required
-                          value={staffAccountForm.email}
-                          onChange={(e) => setStaffAccountForm({ ...staffAccountForm, email: e.target.value })}
-                          placeholder="petugas@tixgoo.com"
-                          className={UI.input}
-                        />
-                      </Field>
-
-                      <Field label="Nomor WhatsApp / Telepon">
-                        <input
-                          type="tel"
-                          value={staffAccountForm.phone}
-                          onChange={(e) => setStaffAccountForm({ ...staffAccountForm, phone: e.target.value })}
-                          placeholder="081234567890"
-                          className={UI.input}
-                        />
-                      </Field>
-
-                      <Field label="Password Login *">
-                        <input
-                          type="password"
-                          required
-                          minLength={6}
-                          value={staffAccountForm.password}
-                          onChange={(e) => setStaffAccountForm({ ...staffAccountForm, password: e.target.value })}
-                          placeholder="Minimal 6 karakter"
-                          className={UI.input}
-                        />
-                      </Field>
-
-                      <p className="text-xs text-gray-500 bg-blue-50/60 p-2.5 rounded-lg border border-blue-100">
-                        Akun yang dibuat akan memiliki role <strong>petugas</strong> dan langsung dapat ditugaskan ke berbagai event.
-                      </p>
-
-                      <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-                        <button
-                          type="button"
-                          onClick={() => setShowCreateStaffModal(false)}
-                          className={UI.btnGhost}
-                        >
-                          Batal
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={staffAccountLoading}
-                          className={UI.btn}
-                        >
-                          {staffAccountLoading ? "Menyimpan..." : "Buat Akun Petugas"}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              )}
-
-              {/* Modal: Penugasan Petugas ke Event */}
-              {showAssignStaffModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-                  <div className="w-full max-w-lg bg-white rounded-2xl border border-gray-200 shadow-2xl p-6 space-y-5">
-                    <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                      <div className="flex items-center gap-2 text-[#111d5e]">
-                        <ShieldCheck className="w-5 h-5 text-blue-600" />
-                        <h3 className="font-bold text-base text-gray-900">Tugaskan Petugas ke Event</h3>
-                      </div>
-                      <button onClick={() => setShowAssignStaffModal(false)} className={UI.iconBtn}>
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    <form onSubmit={handleAssignStaff} className="space-y-4">
-                      <Field label="Pilih Event *">
-                        <select
-                          required
-                          value={assignForm.event_id}
-                          onChange={(e) => setAssignForm({ ...assignForm, event_id: e.target.value })}
-                          className={UI.input}
-                        >
-                          <option value="">-- Pilih Event --</option>
-                          {events.map((evt) => (
-                            <option key={evt.id} value={evt.id}>
-                              {evt.name} ({formatDate(evt.event_date)})
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-
-                      <Field label="Pilih Akun Petugas *">
-                        <select
-                          required
-                          value={assignForm.user_id}
-                          onChange={(e) => setAssignForm({ ...assignForm, user_id: e.target.value })}
-                          className={UI.input}
-                        >
-                          <option value="">-- Pilih Akun Petugas --</option>
-                          {petugasUsers.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name} ({p.email})
-                            </option>
-                          ))}
-                        </select>
-                      </Field>
-
-                      <div>
-                        <label className={UI.label}>Tentukan Izin Operasional (Permissions) *</label>
-                        <div className="space-y-2.5 mt-2 bg-gray-50/70 p-3.5 rounded-xl border border-gray-200">
-                          {[
-                            {
-                              id: "checkin",
-                              name: "Check-in Tiket",
-                              desc: "Memindai QR Code e-ticket pengunjung di pintu masuk venue.",
-                            },
-                            {
-                              id: "offline_sales",
-                              name: "Penjualan Tiket Offline OTS",
-                              desc: "Melayani transaksi penjualan tiket langsung di loket venue.",
-                            },
-                            {
-                              id: "view_visitors",
-                              name: "Lihat Riwayat Pengunjung",
-                              desc: "Melihat daftar kehadiran pengunjung yang telah check-in.",
-                            },
-                            {
-                              id: "view_reports",
-                              name: "Lihat Dashboard Laporan",
-                              desc: "Melihat metrik statistik kehadiran dan penjualan event ini.",
-                            },
-                          ].map((perm) => {
-                            const isChecked = assignForm.permissions.includes(perm.id);
-                            return (
-                              <label
-                                key={perm.id}
-                                className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all ${isChecked
-                                  ? "bg-white border-[#111d5e]/30 shadow-sm"
-                                  : "bg-transparent border-gray-200 hover:bg-gray-100/50"
-                                  }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="mt-1 h-4 w-4 rounded border-gray-300 text-[#111d5e] focus:ring-[#111d5e]"
-                                  checked={isChecked}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setAssignForm({
-                                        ...assignForm,
-                                        permissions: [...assignForm.permissions, perm.id],
-                                      });
-                                    } else {
-                                      setAssignForm({
-                                        ...assignForm,
-                                        permissions: assignForm.permissions.filter((p) => p !== perm.id),
-                                      });
-                                    }
-                                  }}
-                                />
-                                <div>
-                                  <p className="text-xs font-bold text-gray-900">{perm.name}</p>
-                                  <p className="text-[11px] text-gray-500 leading-tight">{perm.desc}</p>
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-                        <button
-                          type="button"
-                          onClick={() => setShowAssignStaffModal(false)}
-                          className={UI.btnGhost}
-                        >
-                          Batal
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={assignLoading}
-                          className={UI.btn}
-                        >
-                          {assignLoading ? "Menugaskan..." : "Tugaskan ke Event"}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              )}
-
-              {/* Modal: Edit Permissions */}
-              {editingAssignment && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-                  <div className="w-full max-w-md bg-white rounded-2xl border border-gray-200 shadow-2xl p-6 space-y-5">
-                    <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-                      <div className="flex items-center gap-2 text-[#111d5e]">
-                        <KeyRound className="w-5 h-5 text-amber-600" />
-                        <div>
-                          <h3 className="font-bold text-sm text-gray-900">Ubah Izin Petugas</h3>
-                          <p className="text-[11px] text-gray-500">
-                            {editingAssignment.staff_name} • {editingAssignment.event_name}
-                          </p>
-                        </div>
-                      </div>
-                      <button onClick={() => setEditingAssignment(null)} className={UI.iconBtn}>
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    <form onSubmit={handleSaveEditedPermissions} className="space-y-4">
-                      <div className="space-y-2.5 bg-gray-50/70 p-3.5 rounded-xl border border-gray-200">
-                        {[
-                          { id: "checkin", name: "Check-in Tiket", desc: "Validasi tiket masuk pengunjung." },
-                          { id: "offline_sales", name: "Penjualan Offline OTS", desc: "Melayani penjualan tiket di loket." },
-                          { id: "view_visitors", name: "Lihat Riwayat Pengunjung", desc: "Melihat daftar check-in event." },
-                          { id: "view_reports", name: "Lihat Dashboard Laporan", desc: "Melihat statistik penjualan event." },
-                        ].map((perm) => {
-                          const isChecked = editPermissions.includes(perm.id);
-                          return (
-                            <label
-                              key={perm.id}
-                              className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all ${isChecked
-                                ? "bg-white border-[#111d5e]/30 shadow-sm"
-                                : "bg-transparent border-gray-200 hover:bg-gray-100/50"
-                                }`}
-                            >
-                              <input
-                                type="checkbox"
-                                className="mt-1 h-4 w-4 rounded border-gray-300 text-[#111d5e] focus:ring-[#111d5e]"
-                                checked={isChecked}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setEditPermissions([...editPermissions, perm.id]);
-                                  } else {
-                                    setEditPermissions(editPermissions.filter((p) => p !== perm.id));
-                                  }
-                                }}
-                              />
-                              <div>
-                                <p className="text-xs font-bold text-gray-900">{perm.name}</p>
-                                <p className="text-[11px] text-gray-500">{perm.desc}</p>
-                              </div>
-                            </label>
-                          );
-                        })}
-                      </div>
-
-                      <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-                        <button
-                          type="button"
-                          onClick={() => setEditingAssignment(null)}
-                          className={UI.btnGhost}
-                        >
-                          Batal
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={editLoading}
-                          className={UI.btn}
-                        >
-                          {editLoading ? "Menyimpan..." : "Simpan Perubahan"}
-                        </button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-              )}
-            </div>
+            <StaffTab
+              staffAssignments={staffAssignments}
+              petugasUsers={petugasUsers}
+              events={events}
+              showCreateStaffModal={showCreateStaffModal}
+              setShowCreateStaffModal={setShowCreateStaffModal}
+              showAssignStaffModal={showAssignStaffModal}
+              setShowAssignStaffModal={setShowAssignStaffModal}
+              staffSubTab={staffSubTab}
+              setStaffSubTab={setStaffSubTab}
+              staffSearchQuery={staffSearchQuery}
+              setStaffSearchQuery={setStaffSearchQuery}
+              staffFilterEvent={staffFilterEvent}
+              setStaffFilterEvent={setStaffFilterEvent}
+              staffAccountForm={staffAccountForm}
+              setStaffAccountForm={setStaffAccountForm}
+              staffAccountLoading={staffAccountLoading}
+              handleCreateStaffAccount={handleCreateStaffAccount}
+              assignForm={assignForm}
+              setAssignForm={setAssignForm}
+              assignLoading={assignLoading}
+              handleAssignStaff={handleAssignStaff}
+              handleToggleStaffStatus={handleToggleStaffStatus}
+              handleRemoveStaffAssignment={handleRemoveStaffAssignment}
+              editingAssignment={editingAssignment}
+              setEditingAssignment={setEditingAssignment}
+              editPermissions={editPermissions}
+              setEditPermissions={setEditPermissions}
+              editLoading={editLoading}
+              handleSaveEditedPermissions={handleSaveEditedPermissions}
+              handleOpenEditPermissions={handleOpenEditPermissions}
+            />
           )}
 
-          {/* ===== BANNERS ===== */}
           {tab === "banners" && (
-            <div className="space-y-6">
-              <SectionBar
-                text={`${banners.length} banner, ${activeBanners} aktif di beranda`}
-                action={
-                  <button onClick={openCreateBanner} className={UI.btn}>
-                    <Plus className="w-4 h-4" /> Tambah banner
-                  </button>
-                }
-              />
-
-              {showBannerForm && (
-                <FormPanel title={editingBanner?.id ? "Edit banner" : "Banner baru"} onClose={closeBannerForm}>
-                  <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-                    <div className="lg:col-span-3 space-y-4">
-                      <Field label="Judul">
-                        <input
-                          type="text"
-                          value={bannerForm.title || ""}
-                          onChange={(e) => setBannerForm({ ...bannerForm, title: e.target.value })}
-                          placeholder="Contoh: Sheila On 7 Tunggu Aku Di Jakarta 2026"
-                          className={UI.input}
-                        />
-                      </Field>
-
-                      <Field label="Link tujuan">
-                        <input
-                          type="text"
-                          value={bannerForm.link_url || ""}
-                          onChange={(e) => setBannerForm({ ...bannerForm, link_url: e.target.value })}
-                          placeholder="/events atau https://..."
-                          className={UI.input}
-                        />
-                        <p className={UI.hint}>Halaman yang dibuka saat banner diklik.</p>
-                      </Field>
-
-                      <label className="flex items-center gap-2.5 text-sm text-gray-700 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={bannerForm.is_active !== false}
-                          onChange={(e) => setBannerForm({ ...bannerForm, is_active: e.target.checked })}
-                          className="w-4 h-4 rounded border-gray-300 text-[#111d5e] focus:ring-[#111d5e]"
-                        />
-                        Tampilkan di beranda
-                      </label>
-
-                      <div>
-                        <span className={UI.label}>Gambar</span>
-                        <div className="inline-flex p-0.5 bg-gray-100 rounded-lg mb-3">
-                          {([["file", "Upload file", Upload], ["url", "Pakai URL", LinkIcon]] as const).map(([mode, text, Icon]) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              onClick={() => setBannerImageMode(mode)}
-                              className={`px-3 py-1.5 rounded-md text-sm flex items-center gap-1.5 transition-colors ${bannerImageMode === mode ? "bg-white text-gray-900 font-medium shadow-sm" : "text-gray-600 hover:text-gray-900"
-                                }`}
-                            >
-                              <Icon className="w-3.5 h-3.5" /> {text}
-                            </button>
-                          ))}
-                        </div>
-
-                        {bannerImageMode === "file" ? (
-                          <>
-                            <label className="flex flex-col items-center justify-center w-full h-28 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-[#111d5e] hover:bg-gray-50 transition-colors">
-                              <Upload className="w-5 h-5 text-gray-400 mb-1.5" />
-                              <span className="text-sm text-gray-700">{bannerFile ? bannerFile.name : "Pilih gambar dari perangkat"}</span>
-                              <span className="text-xs text-gray-400 mt-0.5">PNG, JPG, atau WEBP, maks. 10 MB</span>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    setBannerFile(file);
-                                    setBannerPreview(URL.createObjectURL(file));
-                                  }
-                                }}
-                              />
-                            </label>
-                            {bannerFile && (
-                              <p className="text-xs text-gray-500 mt-1.5">{(bannerFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <input
-                              type="url"
-                              value={bannerForm.image || ""}
-                              onChange={(e) => {
-                                setBannerForm({ ...bannerForm, image: e.target.value });
-                                setBannerPreview(e.target.value);
-                              }}
-                              className={UI.input}
-                              placeholder="https://..."
-                            />
-                            <p className={UI.hint}>Tempel tautan langsung ke gambar.</p>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="lg:col-span-2">
-                      <span className={UI.label}>Pratinjau</span>
-                      <div className="relative aspect-[16/10] bg-gray-100 rounded-lg overflow-hidden border border-gray-200 flex items-center justify-center">
-                        {bannerPreview ? (
-                          <>
-                            <img
-                              src={bannerPreview}
-                              alt="Pratinjau banner"
-                              className="w-full h-full object-cover"
-                              onError={(e: any) => { e.target.src = FALLBACK_IMG; }}
-                            />
-                            <div className="absolute inset-x-0 bottom-0 p-3 bg-black/55 text-white">
-                              <p className="text-sm font-medium line-clamp-1">{bannerForm.title || "Judul banner"}</p>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="text-center text-gray-400">
-                            <ImageIcon className="w-8 h-8 mx-auto mb-1.5" />
-                            <p className="text-sm">Belum ada gambar</p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 mt-6 pt-5 border-t border-gray-100">
-                    <button onClick={handleSaveBanner} disabled={bannerSaving} className={UI.btn}>
-                      {bannerSaving ? "Menyimpan..." : editingBanner?.id ? "Simpan perubahan" : "Simpan banner"}
-                    </button>
-                    <button onClick={closeBannerForm} disabled={bannerSaving} className={UI.btnGhost}>Batal</button>
-                  </div>
-                </FormPanel>
-              )}
-
-              {banners.length === 0 ? (
-                <div className={`${UI.card} py-14 text-center`}>
-                  <ImageIcon className="w-8 h-8 mx-auto text-gray-300 mb-3" />
-                  <p className="text-sm font-medium text-gray-900">Belum ada banner</p>
-                  <p className="text-sm text-gray-500 mt-1 mb-4">Banner aktif akan tampil bergantian di beranda.</p>
-                  <button onClick={openCreateBanner} className={UI.btn}>
-                    <Plus className="w-4 h-4" /> Tambah banner
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {bannerPg.pageItems.map((banner) => (
-                      <article key={banner.id} className={`${UI.card} overflow-hidden flex flex-col`}>
-                        <div className="aspect-[16/9] bg-gray-100">
-                          <img
-                            src={resolveBannerImageUrl(banner.image || banner.image_url)}
-                            alt={banner.title}
-                            className={`w-full h-full object-cover ${banner.is_active ? "" : "grayscale opacity-60"}`}
-                            onError={(e: any) => { e.target.src = FALLBACK_IMG; }}
-                          />
-                        </div>
-                        <div className="p-4 flex-1 flex flex-col gap-3">
-                          <div className="min-w-0">
-                            <h4 className="text-sm font-semibold text-gray-900 line-clamp-2">{banner.title}</h4>
-                            <p className="text-xs text-gray-500 mt-1 truncate">{banner.link_url || "/events"}</p>
-                          </div>
-                          <div className="flex items-center justify-between mt-auto pt-3 border-t border-gray-100">
-                            <button
-                              onClick={() => handleToggleBanner(banner.id)}
-                              className="flex items-center gap-2 text-sm text-gray-700"
-                              title={banner.is_active ? "Nonaktifkan" : "Aktifkan"}
-                              role="switch"
-                              aria-checked={!!banner.is_active}
-                            >
-                              <span className={`relative w-8 h-[18px] rounded-full transition-colors ${banner.is_active ? "bg-emerald-500" : "bg-gray-300"}`}>
-                                <span className={`absolute top-[2px] left-[2px] w-[14px] h-[14px] rounded-full bg-white transition-transform ${banner.is_active ? "translate-x-[14px]" : ""}`} />
-                              </span>
-                              {banner.is_active ? "Aktif" : "Nonaktif"}
-                            </button>
-                            <div className="flex items-center gap-0.5">
-                              <button onClick={() => openEditBanner(banner)} className={UI.iconBtn} title="Edit">
-                                <Pencil className="w-4 h-4" />
-                              </button>
-                              <button onClick={() => handleDeleteBanner(banner.id)} className={UI.iconBtnDanger} title="Hapus">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                  <Pagination {...bannerPg} onChange={bannerPg.setPage} />
-                </>
-              )}
-            </div>
+            <BannersTab
+              banners={banners}
+              showBannerForm={showBannerForm}
+              setShowBannerForm={setShowBannerForm}
+              editingBanner={editingBanner}
+              setEditingBanner={setEditingBanner}
+              bannerForm={bannerForm}
+              setBannerForm={setBannerForm}
+              bannerImageMode={bannerImageMode}
+              setBannerImageMode={setBannerImageMode}
+              bannerFile={bannerFile}
+              setBannerFile={setBannerFile}
+              bannerPreview={bannerPreview}
+              setBannerPreview={setBannerPreview}
+              bannerSaving={bannerSaving}
+              openCreateBanner={openCreateBanner}
+              openEditBanner={openEditBanner}
+              closeBannerForm={closeBannerForm}
+              handleSaveBanner={handleSaveBanner}
+              handleToggleBanner={handleToggleBanner}
+              handleDeleteBanner={handleDeleteBanner}
+            />
           )}
 
-          {/* ===== PACKAGES ===== */}
           {tab === "packages" && (
-            <div className="space-y-6">
-              <SectionBar
-                text={`${packages.length} paket`}
-                action={
-                  <button onClick={() => setShowPackageForm(!showPackageForm)} className={UI.btn}>
-                    <Plus className="w-4 h-4" /> Tambah paket
-                  </button>
-                }
-              />
-
-              {showPackageForm && (
-                <FormPanel title="Paket baru" onClose={() => setShowPackageForm(false)}>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {[
-                      { key: "name", label: "Nama paket", type: "text" },
-                      { key: "duration", label: "Durasi (contoh: 1 bulan)", type: "text" },
-                      { key: "price", label: "Harga (Rp)", type: "number" },
-                    ].map(({ key, label, type }) => (
-                      <Field key={key} label={label}>
-                        {key === "price" ? (
-                          <RupiahInput value={packageForm.price} onChange={(n) => setPackageForm({ ...packageForm, price: n })} />
-                        ) : (
-                          <input
-                            type={type}
-                            value={(packageForm as any)[key] || ""}
-                            onChange={(e) => setPackageForm({ ...packageForm, [key]: e.target.value })}
-                            className={UI.input}
-                          />
-                        )}
-                      </Field>
-                    ))}
-                    <Field label="Deskripsi" className="sm:col-span-2">
-                      <textarea
-                        rows={2}
-                        value={packageForm.description || ""}
-                        onChange={(e) => setPackageForm({ ...packageForm, description: e.target.value })}
-                        className={`${UI.input} resize-none`}
-                      />
-                    </Field>
-                  </div>
-                  <div className="flex gap-2 mt-6">
-                    <button onClick={handleSavePackage} className={UI.btn}>Simpan paket</button>
-                    <button onClick={() => setShowPackageForm(false)} className={UI.btnGhost}>Batal</button>
-                  </div>
-                </FormPanel>
-              )}
-
-              {packages.length === 0 ? (
-                <p className={`${UI.card} text-sm text-gray-500 text-center py-10`}>Belum ada paket kerja sama.</p>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {packagePg.pageItems.map((pkg) => (
-                      <div key={pkg.id} className={`${UI.card} p-5 flex flex-col border-t-[3px] border-t-[#111d5e]`}>
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <h4 className="text-base font-semibold text-gray-900">{pkg.name}</h4>
-                            <p className="text-sm text-gray-500">{pkg.duration}</p>
-                          </div>
-                          <button onClick={() => handleDeletePackage(pkg.id)} className={UI.iconBtnDanger} title="Hapus">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <p className="text-xl font-semibold text-[#111d5e] mt-4 tabular-nums">{formatRupiah(pkg.price)}</p>
-                        <p className="text-sm text-gray-600 mt-2 leading-relaxed">{pkg.description || "-"}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <Pagination {...packagePg} onChange={packagePg.setPage} />
-                </>
-              )}
-            </div>
+            <PackagesTab
+              packages={packages}
+              showPackageForm={showPackageForm}
+              setShowPackageForm={setShowPackageForm}
+              packageForm={packageForm}
+              setPackageForm={setPackageForm}
+              handleSavePackage={handleSavePackage}
+              handleDeletePackage={handleDeletePackage}
+            />
           )}
 
-          {/* ===== USERS ===== */}
           {tab === "users" && (
-            <div className="space-y-4">
-              <SectionBar text={`${users.length} pengguna`} />
-              <Table
-                head={[{ label: "Nama" }, { label: "Email" }, { label: "Telepon" }, { label: "Role" }, { label: "", align: "right" }]}
-                empty="Belum ada pengguna."
-                footer={<Pagination {...userPg} onChange={userPg.setPage} inCard />}
-              >
-                {userPg.pageItems.map((u) => (
-                  <tr key={u.id} className="hover:bg-gray-50">
-                    <td className={UI.td}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[#111d5e]/10 text-[#111d5e] text-xs font-semibold flex items-center justify-center shrink-0">
-                          {u.name?.slice(0, 2).toUpperCase()}
-                        </div>
-                        <span className="font-medium text-gray-900">{u.name}</span>
-                      </div>
-                    </td>
-                    <td className={UI.td}>{u.email}</td>
-                    <td className={UI.td}>{u.phone || "-"}</td>
-                    <td className={UI.td}>
-                      <Badge tone={u.role === "admin" ? "amber" : u.role === "petugas" ? "green" : "blue"}>
-                        {u.role === "admin" ? "Admin" : u.role === "petugas" ? "Petugas" : "Pengguna"}
-                      </Badge>
-                    </td>
-                    <td className={`${UI.td} text-right`}>
-                      {u.role !== "admin" && (
-                        <button onClick={() => handleDeleteUser(u.id)} className={UI.iconBtnDanger} title="Hapus">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </Table>
-            </div>
+            <UsersTab users={users} handleDeleteUser={handleDeleteUser} />
           )}
 
-          {/* ===== ORDERS ===== */}
-          {tab === "orders" && (
-            <div className="space-y-6">
-              <div className={`${UI.card} grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100`}>
-                {[
-                  { label: "Total order", value: orders.length, dot: "bg-[#111d5e]" },
-                  { label: "Berhasil dibayar", value: orders.filter((o) => o.status === "paid").length, dot: "bg-emerald-500" },
-                  { label: "Menunggu pembayaran", value: orders.filter((o) => o.status === "pending").length, dot: "bg-amber-500" },
-                ].map((s) => (
-                  <div key={s.label} className="p-5">
-                    <p className="text-sm text-gray-500 flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${s.dot}`} />{s.label}</p>
-                    <p className="text-2xl font-semibold text-gray-900 mt-1.5 tabular-nums">{s.value}</p>
-                  </div>
-                ))}
-              </div>
-              <Table
-                head={orderHead}
-                empty="Belum ada order."
-                footer={<Pagination {...orderPg} onChange={orderPg.setPage} inCard />}
-              >
-                {orderPg.pageItems.map(orderRow)}
-              </Table>
-            </div>
-          )}
+          {tab === "orders" && <OrdersTab orders={orders} />}
         </main>
       </div>
     </div>

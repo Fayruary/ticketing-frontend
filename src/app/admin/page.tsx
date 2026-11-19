@@ -724,8 +724,8 @@ export default function AdminPage() {
               key={item.id}
               onClick={() => { setTab(item.id); setSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-colors ${tab === item.id
-                  ? "bg-[#111d5e]/[0.08] text-[#111d5e] font-semibold shadow-[inset_3px_0_0_#111d5e]"
-                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                ? "bg-[#111d5e]/[0.08] text-[#111d5e] font-semibold shadow-[inset_3px_0_0_#111d5e]"
+                : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                 }`}
             >
               {item.icon}
@@ -1039,7 +1039,7 @@ export default function AdminPage() {
           {tab === "staff" && (
             <div className="space-y-6">
               <SectionBar
-                text={`${staffAssignments.length} penugasan event (${staffAssignments.filter((s) => s.is_active).length} aktif) ΓÇó ${petugasUsers.length} total akun petugas terdaftar`}
+                text={`${staffAssignments.length} penugasan event (${staffAssignments.filter((s) => s.is_active).length} aktif) • ${petugasUsers.length} total akun petugas terdaftar`}
                 action={
                   <div className="flex items-center gap-2">
                     <button
@@ -1076,8 +1076,8 @@ export default function AdminPage() {
                     type="button"
                     onClick={() => setStaffSubTab("assignments")}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${staffSubTab === "assignments"
-                        ? "bg-[#111d5e] text-white shadow-sm"
-                        : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                      ? "bg-[#111d5e] text-white shadow-sm"
+                      : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
                       }`}
                   >
                     <ShieldCheck className="w-4 h-4" />
@@ -1092,8 +1092,8 @@ export default function AdminPage() {
                     type="button"
                     onClick={() => setStaffSubTab("users")}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${staffSubTab === "users"
-                        ? "bg-[#111d5e] text-white shadow-sm"
-                        : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                      ? "bg-[#111d5e] text-white shadow-sm"
+                      : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
                       }`}
                   >
                     <Users className="w-4 h-4" />
@@ -1251,8 +1251,8 @@ export default function AdminPage() {
                                 type="button"
                                 onClick={() => handleToggleStaffStatus(assignment)}
                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${assignment.is_active
-                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
-                                    : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                  : "bg-gray-100 text-gray-500 border border-gray-200 hover:bg-gray-200"
                                   }`}
                                 title="Klik untuk mengubah status aktif/nonaktif"
                               >
@@ -1525,8 +1525,8 @@ export default function AdminPage() {
                               <label
                                 key={perm.id}
                                 className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all ${isChecked
-                                    ? "bg-white border-[#111d5e]/30 shadow-sm"
-                                    : "bg-transparent border-gray-200 hover:bg-gray-100/50"
+                                  ? "bg-white border-[#111d5e]/30 shadow-sm"
+                                  : "bg-transparent border-gray-200 hover:bg-gray-100/50"
                                   }`}
                               >
                                 <input
@@ -1588,7 +1588,7 @@ export default function AdminPage() {
                         <div>
                           <h3 className="font-bold text-sm text-gray-900">Ubah Izin Petugas</h3>
                           <p className="text-[11px] text-gray-500">
-                            {editingAssignment.staff_name} ΓÇó {editingAssignment.event_name}
+                            {editingAssignment.staff_name} • {editingAssignment.event_name}
                           </p>
                         </div>
                       </div>
@@ -1610,8 +1610,8 @@ export default function AdminPage() {
                             <label
                               key={perm.id}
                               className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-all ${isChecked
-                                  ? "bg-white border-[#111d5e]/30 shadow-sm"
-                                  : "bg-transparent border-gray-200 hover:bg-gray-100/50"
+                                ? "bg-white border-[#111d5e]/30 shadow-sm"
+                                : "bg-transparent border-gray-200 hover:bg-gray-100/50"
                                 }`}
                             >
                               <input

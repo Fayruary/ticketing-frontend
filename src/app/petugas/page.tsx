@@ -11,7 +11,7 @@ import { checkinTicket, getEventCheckins, type CheckinResponse } from "@/service
 import { createOfflineSale, getEventOfflineSales, type OfflineSale } from "@/services/offlineSaleService";
 import { formatDate, formatRupiah } from "@/lib/utils";
 import {
-  Ticket, ScanLine, QrCode, ShieldCheck, CheckCircle2, AlertCircle, XCircle,
+  Check, Ticket, ScanLine, QrCode, ShieldCheck, CheckCircle2, AlertCircle, XCircle,
   Users, LogOut, Activity, BarChart3, ShoppingBag, User, Phone, Mail,
   ChevronDown, Sparkles, Menu, X, Clock, Wifi, Lock, RefreshCw, CreditCard
 } from "lucide-react";
@@ -470,23 +470,23 @@ export default function PetugasPage() {
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs text-gray-500 font-medium mr-1">Izin Anda:</span>
               {canCheckin && (
-                <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  ✓ Check-in
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <Check className="w-3.5 h-3.5" /> Check-in
                 </span>
               )}
               {canOfflineSales && (
-                <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                  ✓ Penjualan OTS
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                  <Check className="w-3.5 h-3.5" /> Penjualan OTS
                 </span>
               )}
               {canViewVisitors && (
-                <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                  ✓ Pengunjung
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                  <Check className="w-3.5 h-3.5" /> Pengunjung
                 </span>
               )}
               {canViewReports && (
-                <span className="px-2.5 py-1 rounded-md text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-                  ✓ Laporan
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                  <Check className="w-3.5 h-3.5" /> Laporan
                 </span>
               )}
               {currentPermissions.length === 0 && (
@@ -649,9 +649,11 @@ export default function PetugasPage() {
                   {/* Panduan Singkat */}
                   <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-500 space-y-1">
                     <p className="font-semibold text-gray-700 mb-1">Ketentuan Scan Gerbang Masuk:</p>
-                    <p>✓ 1 tiket hanya dapat di-checkin 1 kali (anti duplikasi tiket)</p>
-                    <p>✓ Petugas hanya dapat memvalidasi tiket event yang ditugaskan</p>
-                    <p>✗ Tiket dengan status sudah dipakai akan langsung ditolak</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      <li>1 tiket hanya dapat di-checkin 1 kali (anti duplikasi tiket)</li>
+                      <li>Petugas hanya dapat memvalidasi tiket event yang ditugaskan</li>
+                      <li>Tiket dengan status sudah dipakai akan langsung ditolak</li>
+                    </ul>
                   </div>
                 </div>
               </div>

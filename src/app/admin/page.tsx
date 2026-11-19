@@ -124,7 +124,7 @@ function Pagination({
         }`}
     >
       <p className="text-sm text-gray-500">
-        Menampilkan <span className="font-medium text-gray-700">{from}ΓÇô{to}</span> dari{" "}
+        Menampilkan <span className="font-medium text-gray-700">{from} - {to}</span> dari{" "}
         <span className="font-medium text-gray-700">{total}</span>
       </p>
 
@@ -626,7 +626,7 @@ export default function AdminPage() {
       <div className="min-h-screen flex items-center justify-center bg-[#f3f5fa]">
         <div className="flex items-center gap-3 text-sm text-gray-500">
           <div className="w-5 h-5 border-2 border-[#111d5e] border-t-transparent rounded-full animate-spin" />
-          Memuat dashboardΓÇª
+          Memuat dashboard...
         </div>
       </div>
     );
@@ -1121,9 +1121,9 @@ export default function AdminPage() {
                     <button
                       type="button"
                       onClick={() => setStaffSubTab("users")}
-                      className="font-bold text-amber-900 underline hover:text-amber-700 shrink-0"
+                      className="font-bold text-amber-900 underline hover:text-amber-700 shrink-0 inline-flex items-center gap-1"
                     >
-                      Lihat Akun Petugas ΓåÆ
+                      Lihat Akun Petugas <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 );
@@ -1226,22 +1226,22 @@ export default function AdminPage() {
                                 )}
                                 {assignment.permissions?.includes("checkin") && (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    Γ£ô Check-In
+                                    <Check className="w-3 h-3" /> Check-In
                                   </span>
                                 )}
                                 {assignment.permissions?.includes("offline_sales") && (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                                    Γ£ô Offline OTS
+                                    <Check className="w-3 h-3" /> Offline OTS
                                   </span>
                                 )}
                                 {assignment.permissions?.includes("view_visitors") && (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                                    Γ£ô Pengunjung
+                                    <Check className="w-3 h-3" /> Pengunjung
                                   </span>
                                 )}
                                 {assignment.permissions?.includes("view_reports") && (
                                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
-                                    Γ£ô Laporan
+                                    <Check className="w-3 h-3" /> Laporan
                                   </span>
                                 )}
                               </div>
@@ -1330,7 +1330,7 @@ export default function AdminPage() {
                         <td className={UI.td}>
                           {(petugas.total_assigned_events || 0) > 0 ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              Γ£ô {petugas.total_assigned_events} Event Ditugaskan
+                              <Check className="w-3.5 h-3.5" /> {petugas.total_assigned_events} Event Ditugaskan
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
@@ -1424,7 +1424,7 @@ export default function AdminPage() {
                       </Field>
 
                       <p className="text-xs text-gray-500 bg-blue-50/60 p-2.5 rounded-lg border border-blue-100">
-                        Γä╣ Akun yang dibuat akan memiliki role <strong>petugas</strong> dan langsung dapat ditugaskan ke berbagai event.
+                        Akun yang dibuat akan memiliki role <strong>petugas</strong> dan langsung dapat ditugaskan ke berbagai event.
                       </p>
 
                       <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
@@ -1689,7 +1689,7 @@ export default function AdminPage() {
                           type="text"
                           value={bannerForm.link_url || ""}
                           onChange={(e) => setBannerForm({ ...bannerForm, link_url: e.target.value })}
-                          placeholder="/events atau https://ΓÇª"
+                          placeholder="/events atau https://..."
                           className={UI.input}
                         />
                         <p className={UI.hint}>Halaman yang dibuka saat banner diklik.</p>
@@ -1754,7 +1754,7 @@ export default function AdminPage() {
                                 setBannerPreview(e.target.value);
                               }}
                               className={UI.input}
-                              placeholder="https://ΓÇª"
+                              placeholder="https://..."
                             />
                             <p className={UI.hint}>Tempel tautan langsung ke gambar.</p>
                           </>
@@ -1789,7 +1789,7 @@ export default function AdminPage() {
 
                   <div className="flex gap-2 mt-6 pt-5 border-t border-gray-100">
                     <button onClick={handleSaveBanner} disabled={bannerSaving} className={UI.btn}>
-                      {bannerSaving ? "MenyimpanΓÇª" : editingBanner?.id ? "Simpan perubahan" : "Simpan banner"}
+                      {bannerSaving ? "Menyimpan..." : editingBanner?.id ? "Simpan perubahan" : "Simpan banner"}
                     </button>
                     <button onClick={closeBannerForm} disabled={bannerSaving} className={UI.btnGhost}>Batal</button>
                   </div>

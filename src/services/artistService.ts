@@ -4,7 +4,9 @@ export interface Artist {
   id: string;
   name: string;
   photo?: string;
+  image_url?: string;
   genre?: string;
+  role?: string;
 }
 
 export async function getArtists() {

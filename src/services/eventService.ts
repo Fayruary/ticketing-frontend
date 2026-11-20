@@ -13,13 +13,15 @@ export interface Event {
   event_time?: string;
   genre?: string;
   status:
-    | "draft"
-    | "published"
-    | "finished"
-    | "cancelled";
+  | "draft"
+  | "published"
+  | "finished"
+  | "cancelled";
   created_at?: string;
   updated_at?: string;
   min_price?: number;
+  organizer_name?: string;
+  company_name?: string;
 }
 
 export interface EventFilter {
